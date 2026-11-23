@@ -1,0 +1,28 @@
+{
+  "_note": "Edit freely. 'en' is what the speaker says; 'es' is the Mexican Spanish term the team actually uses on the job. Terms are also sent to speech recognition so it hears them correctly.",
+  "terms": [
+    { "en": "make-ready", "es": "preparación de unidad" },
+    { "en": "turn", "es": "preparación de unidad (turn)" },
+    { "en": "work order", "es": "orden de trabajo" },
+    { "en": "unit", "es": "departamento" },
+    { "en": "move-out", "es": "desocupación" },
+    { "en": "move-in", "es": "mudanza de entrada" },
+    { "en": "HVAC", "es": "aire acondicionado y calefacción (HVAC)" },
+    { "en": "AC", "es": "el aire (el clima)" },
+    { "en": "breaker", "es": "el breaker (pastilla)" },
+    { "en": "GFCI", "es": "contacto GFCI" },
+    { "en": "outlet", "es": "contacto" },
+    { "en": "water heater", "es": "boiler (calentador de agua)" },
+    { "en": "garbage disposal", "es": "triturador de basura" },
+    { "en": "drywall", "es": "tablaroca" },
+    { "en": "caulk", "es": "sellador (caulk)" },
+    { "en": "smoke detector", "es": "detector de humo" },
+    { "en": "leak", "es": "fuga" },
+    { "en": "mold", "es": "moho" },
+    { "en": "pest control", "es": "fumigación" },
+    { "en": "punch list", "es": "lista de pendientes" },
+    { "en": "AppFolio", "es": "AppFolio" },
+    { "en": "resident", "es": "residente" },
+    { "en": "property manager", "es": "gerente de la propiedad" }
+  ]
+}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1f6f5c" />
+  <title>Puente</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main id="join" class="center">
+    <form class="card" id="joinForm" autocomplete="off">
+      <h1 class="brand">Pu<span>e</span>nte</h1>
+      <p class="sub">Traducción en vivo · Live translation</p>
+      <label>Código de la junta
+        <input id="code" class="code" maxlength="4" inputmode="text" autocapitalize="characters" required placeholder="ABCD" />
+      </label>
+      <label>Tu nombre (opcional)
+        <input id="name" maxlength="40" placeholder="Ej. Juan" />
+      </label>
+      <button class="btn" id="joinAudio" type="submit">🎧 Entrar con voz</button>
+      <button class="btn secondary" id="joinText" type="button">Solo texto</button>
+      <p class="err" id="joinErr"></p>
+      <p class="tip">Conecta tus audífonos y deja la pantalla encendida durante la junta.</p>
+    </form>
+  </main>
+
+  <main id="live" class="live hidden">
+    <header class="bar">
+      <span class="dot" id="dot"></span>
+      <span class="title" id="title">Puente</span>
+      <button class="icon-btn" id="audioBtn" aria-pressed="true" title="Voz">🔊</button>
+      <button class="icon-btn" id="smaller" title="Letra más chica">A−</button>
+      <button class="icon-btn" id="bigger" title="Letra más grande">A+</button>
+    </header>
+    <section class="col">
+      <div class="label">English</div>
+      <div class="pane en" id="enPane" aria-live="off"><p class="empty" id="enEmpty">Esperando al presentador…</p></div>
+    </section>
+    <div class="divider"></div>
+    <section class="col">
+      <div class="label">Español</div>
+      <div class="pane es" id="esPane" aria-live="polite"><p class="empty" id="esEmpty">La traducción aparecerá aquí.</p></div>
+    </section>
+    <footer class="talkbar hidden" id="talkbar">
+      <button class="talk" id="talkBtn">🎤 Mantén presionado para responder</button>
+    </footer>
+  </main>
+  <script type="module" src="/js/listen.js"></script>
+</body>
+</html>

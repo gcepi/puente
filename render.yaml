@@ -1,0 +1,29 @@
+# One-click deploy: Render dashboard -> New -> Blueprint -> pick this repo.
+# Keys marked sync:false are entered in the dashboard, never stored in git.
+services:
+  - type: web
+    name: puente
+    runtime: node
+    plan: starter # $7/mo, always on. "free" works for testing but sleeps after 15 min idle (~1 min cold start).
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ENGINE
+        value: openai-translate
+      - key: TTS_PROVIDER
+        value: openai
+      - key: HOST_PASSCODE
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false

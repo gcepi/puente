@@ -1,0 +1,22 @@
+{
+  "name": "puente",
+  "version": "1.0.0",
+  "description": "Live English to Mexican Spanish meeting translation: captions plus voice, on any phone.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node test/e2e.mjs"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.23.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true
+}
