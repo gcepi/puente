@@ -1,10 +1,17 @@
 # One-click deploy: Render dashboard -> New -> Blueprint -> pick this repo.
-# Keys marked sync:false are entered in the dashboard, never stored in git.
+# Render asks for two values: your OpenAI key and a host passcode.
+# Keys are entered in the dashboard and never stored in git.
+#
+# To use the glossary/voice engine later, add DEEPGRAM_API_KEY, ANTHROPIC_API_KEY
+# (and optionally ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID, TTS_PROVIDER=elevenlabs)
+# under the service's Environment tab.
 services:
   - type: web
     name: puente
     runtime: node
-    plan: starter # $7/mo, always on. "free" works for testing but sleeps after 15 min idle (~1 min cold start).
+    # "free" needs no card and is fine for testing, but sleeps after 15 idle minutes
+    # (about a minute to wake). Switch to "starter" ($7/mo, always on) before real meetings.
+    plan: free
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /healthz
@@ -15,15 +22,7 @@ services:
         value: openai-translate
       - key: TTS_PROVIDER
         value: openai
-      - key: HOST_PASSCODE
-        sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: DEEPGRAM_API_KEY
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: ELEVENLABS_API_KEY
-        sync: false
-      - key: ELEVENLABS_VOICE_ID
+      - key: HOST_PASSCODE
         sync: false

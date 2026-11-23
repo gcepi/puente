@@ -21,12 +21,14 @@ Copy each key into a password manager as you go.
 
 ## 3. Deploy on Render (10 min)
 
-1. render.com → sign in with GitHub.
-2. **New → Blueprint** → choose `gcepi/puente`. Render reads `render.yaml`.
-3. Fill in the keys it asks for. Also set `HOST_PASSCODE` to something short, so only you can start meetings. Leave keys blank for services you didn't sign up for.
-4. Deploy. You get an address like `https://puente-xxxx.onrender.com`.
+1. Go to render.com and **sign in with GitHub**.
+2. Click **New → Blueprint** and choose `gcepi/puente`. Render reads `render.yaml`.
+3. It asks for exactly two values:
+   - `OPENAI_API_KEY`: paste your key.
+   - `HOST_PASSCODE`: make up something short. Only someone with it can *start* a meeting, which keeps strangers from spending your OpenAI credit. Joining only needs the room code.
+4. Click **Apply** and wait about 2–3 minutes for the build. Your address appears at the top, like `https://puente-xxxx.onrender.com`.
 
-Plan: **Starter ($7/mo)** stays awake. Free works for testing but takes about a minute to wake after 15 idle minutes.
+The blueprint starts on Render's **free** plan (no card needed). Free sleeps after 15 idle minutes and takes about a minute to wake. Before your first real meeting, switch it to **Starter ($7/mo)**: Settings → Instance Type.
 
 ## 4. Smoke test (10 min)
 
