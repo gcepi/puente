@@ -5,16 +5,23 @@
 const RATE = 24000;
 const MIN_SECONDS = 0.4; // ignore accidental taps
 const MAX_SECONDS = 120; // a single turn is capped so memory stays bounded
-const SILENCE_RMS = 0.006; // below this the turn is treated as silence (avoids made-up transcripts)
+// Speech check: transcription models invent words (or echo old text) when given
+// silence, so a turn must contain at least MIN_VOICED_SECONDS of voice-level audio.
+const FRAME = 720; // 30 ms
+const VOICE_RMS = 0.02;
+const MIN_VOICED_SECONDS = 0.3;
 
-function rms(pcm) {
-  let sum = 0;
-  const n = pcm.length / 2;
-  for (let i = 0; i < pcm.length; i += 2) {
-    const s = pcm.readInt16LE(i) / 32768;
-    sum += s * s;
+export function voicedSeconds(pcm) {
+  let voiced = 0;
+  for (let off = 0; off + FRAME * 2 <= pcm.length; off += FRAME * 2) {
+    let sum = 0;
+    for (let i = 0; i < FRAME; i++) {
+      const s = pcm.readInt16LE(off + i * 2) / 32768;
+      sum += s * s;
+    }
+    if (Math.sqrt(sum / FRAME) > VOICE_RMS) voiced++;
   }
-  return n ? Math.sqrt(sum / n) : 0;
+  return (voiced * FRAME) / RATE;
 }
 
 export class TurnEngine {
@@ -49,7 +56,11 @@ export class TurnEngine {
     const pcm = Buffer.concat(this.chunks);
     this.chunks = [];
     this.bytes = 0;
-    if (pcm.length < MIN_SECONDS * RATE * 2 || rms(pcm) < SILENCE_RMS) return;
+    if (!pcm.length) return;
+    if (pcm.length < MIN_SECONDS * RATE * 2 || voicedSeconds(pcm) < MIN_VOICED_SECONDS) {
+      this.hooks.error("Didn't catch any speech. Hold the button the whole time you talk.");
+      return;
+    }
     const id = `t${this.seq++}`;
     this.hooks.caption({ lang: this.src, id, text: '…', final: false });
     // Turns are handled strictly in order, so voices never overlap.

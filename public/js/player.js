@@ -1,5 +1,6 @@
 // Plays the translated voice: raw PCM16 / 24 kHz / mono chunks, scheduled
 // back to back on a Web Audio clock.
+import { audioContext } from './common.js';
 
 function silentWavUrl() {
   // 0.5 s of silence. Looping it through an <audio> element puts iOS in
@@ -26,9 +27,8 @@ function silentWavUrl() {
 }
 
 export class PcmPlayer {
-  constructor({ sampleRate = 24000, maxLagSeconds = 8 } = {}) {
+  constructor({ sampleRate = 24000 } = {}) {
     this.rate = sampleRate;
-    this.maxLag = maxLagSeconds;
     this.ctx = null;
     this.next = 0;
     this.sources = new Set();
@@ -38,8 +38,7 @@ export class PcmPlayer {
 
   /** Must run inside a tap/click handler (browser autoplay rules). */
   async unlock() {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new Ctx({ latencyHint: 'interactive' });
+    this.ctx = audioContext(); // synchronous: must run inside the tap
     try {
       if (navigator.audioSession) navigator.audioSession.type = 'playback';
     } catch {}
@@ -72,13 +71,10 @@ export class PcmPlayer {
     buf.copyToChannel(f32, 0);
 
     const now = this.ctx.currentTime;
-    if (this.next < now + 0.02) this.next = now + 0.08; // small jitter buffer after a gap
-    if (this.next - now > this.maxLag) {
-      // Voice has fallen too far behind the speaker: jump to live.
-      this.skip();
-      this.stats.skips++;
-      this.next = now + 0.08;
-    }
+    // The voice arrives faster than it plays, so chunks queue up and play back to back.
+    // After a pause, wait a quarter second before starting so network hiccups don't
+    // cause gaps mid-sentence.
+    if (this.next < now + 0.02) this.next = now + 0.25;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.connect(this.ctx.destination);

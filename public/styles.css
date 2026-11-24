@@ -158,3 +158,17 @@ input.code { text-transform: uppercase; letter-spacing: 0.35em; font-size: 28px;
 }
 .talk.down { background: var(--live); color: #fff; }
 .talk:disabled { opacity: 0.45; }
+
+/* ---------- desktop: English and Spanish side by side ---------- */
+@media (min-width: 760px) {
+  .live, .live.can-talk { grid-template-columns: minmax(0, 1fr) 2px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .live > .bar, .live > .talkbar { grid-column: 1 / -1; }
+  .live > .divider { width: 2px; height: auto; }
+  .live .pane.en .line { font-size: calc(var(--es-size) * 0.8); line-height: 1.3; }
+}
+@media (min-width: 1000px) {
+  .monitor { grid-template-columns: minmax(0, 1fr) 2px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .monitor > .divider { width: 2px; height: auto; }
+  .monitor .pane.en .line { font-size: 24px; line-height: 1.3; }
+  .monitor .pane.es .line { font-size: 26px; }
+}

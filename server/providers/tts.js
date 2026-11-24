@@ -53,7 +53,8 @@ export function createOpenAiTts({ apiKey, model, voice, language = 'es' }) {
         voice,
         input: text,
         response_format: 'pcm',
-        instructions: OPENAI_STYLE[language] ?? OPENAI_STYLE.es,
+        // Only the gpt-* speech models take style instructions.
+        ...(model.startsWith('gpt-') ? { instructions: OPENAI_STYLE[language] ?? OPENAI_STYLE.es } : {}),
       }),
     });
     await streamPcm(res, onAudio, 'OpenAI');

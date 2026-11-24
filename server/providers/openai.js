@@ -29,22 +29,14 @@ async function check(res, label) {
   throw new Error(`${label} ${res.status}: ${body.slice(0, 200)}`);
 }
 
-export function createOpenAiTranscriber({ apiKey, model, glossary }) {
-  const terms = (glossary?.terms ?? []).slice(0, 40);
+export function createOpenAiTranscriber({ apiKey, model }) {
   return async function transcribe(pcm, language) {
     const form = new FormData();
     form.append('file', new Blob([pcmToWav(pcm)], { type: 'audio/wav' }), 'turn.wav');
     form.append('model', model);
     form.append('language', language);
     form.append('response_format', 'json');
-    // A hint with trade vocabulary improves recognition of jargon.
-    const hint = terms.map((t) => (language === 'en' ? t.en : t.es)).join(', ');
-    form.append(
-      'prompt',
-      language === 'en'
-        ? `Apartment maintenance team meeting. Terms: ${hint}.`
-        : `Junta del equipo de mantenimiento de departamentos, español de México. Términos: ${hint}.`
-    );
+    // No 'prompt' hint: on near-silent audio the model echoes the hint back as if it were speech.
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}` },

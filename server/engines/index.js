@@ -27,7 +27,17 @@ export function createEngine(name, hooks, direction = 'en-es') {
       {
         transcribe: createOpenAiTranscriber({ apiKey: config.openaiKey, model: config.openaiSttModel, glossary: config.glossary }),
         translate,
-        speak: createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst }),
+        // ElevenLabs gives the most natural, consistent voice when its keys are set.
+        speak:
+          config.elevenKey && config.elevenVoiceId
+            ? createElevenLabsTts({
+                apiKey: config.elevenKey,
+                voiceId: dst === 'es' ? config.elevenVoiceId : config.elevenReplyVoiceId || config.elevenVoiceId,
+                model: config.elevenModel,
+                speed: config.ttsSpeed,
+                language: dst,
+              })
+            : createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst }),
       },
       { src, dst }
     );

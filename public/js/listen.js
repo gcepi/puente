@@ -1,4 +1,4 @@
-import { connect, CaptionPane, keepAwake, openMic, micPossible, $ } from './common.js';
+import { connect, CaptionPane, keepAwake, openMic, micPossible, audioContext, $ } from './common.js';
 import { PcmPlayer } from './player.js';
 
 const player = new PcmPlayer();
@@ -99,6 +99,7 @@ function start(code, name, withAudio) {
   }
   // Tap to start, tap again to send. (A long press gets cancelled by iOS.)
   const startTalk = async () => {
+    audioContext(); // Safari/iOS: start audio inside the tap, before any await
     talking = true;
     talkBtn.classList.add('down');
     talkBtn.textContent = '🔴 Hablando… toca para enviar';

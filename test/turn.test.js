@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TurnEngine } from '../server/engines/turn.js';
+import { TurnEngine, voicedSeconds } from '../server/engines/turn.js';
 import { pcmToWav } from '../server/providers/openai.js';
 
 const tone = (seconds, amp = 0.2) => {
@@ -40,14 +40,23 @@ test('nothing is translated until release; then transcribe -> translate -> speak
   assert.deepEqual(out.audio, ['voice:ES(said 1)|ctx=0']);
 });
 
-test('accidental taps and silence are ignored', async () => {
+test('accidental taps and silence are never sent to transcription, and the host is told', async () => {
   const { engine, out } = harness();
   engine.audio(tone(0.2));
   engine.flush();
-  engine.audio(tone(1.5, 0.001));
+  engine.audio(tone(1.5, 0.001)); // room noise
   engine.flush();
   await engine.chain;
   assert.equal(out.calls.length, 0);
+  assert.equal(out.errors.length, 2);
+  assert.match(out.errors[0], /Didn't catch any speech/);
+});
+
+test('speech check counts voiced time, not just loudness of a click', () => {
+  assert.ok(voicedSeconds(tone(1, 0.2)) > 0.9);
+  assert.equal(voicedSeconds(tone(1, 0.001)), 0);
+  const click = Buffer.concat([tone(0.06, 0.5), tone(1.5, 0.001)]); // a bump, then silence
+  assert.ok(voicedSeconds(click) < 0.3);
 });
 
 test('turns are spoken strictly in order and carry context', async () => {

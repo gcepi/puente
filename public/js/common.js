@@ -105,13 +105,31 @@ export function keepAwake() {
 
 export const $ = (s) => document.querySelector(s);
 
-/** Mic -> 24 kHz PCM16 frames. Returns { stop }. Throws if permission is denied or the page is not https. */
+/**
+ * One AudioContext for the whole page, used for both playback and the mic.
+ * Safari and iOS only let audio start inside a tap, so call this synchronously
+ * at the top of every tap handler, before any await.
+ */
+let sharedCtx = null;
+export function audioContext() {
+  if (!sharedCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    sharedCtx = new Ctx({ latencyHint: 'interactive' });
+  }
+  if (sharedCtx.state !== 'running') sharedCtx.resume().catch(() => {});
+  return sharedCtx;
+}
+
+/** Mic -> 24 kHz PCM16 frames. Call audioContext() inside the tap first. Returns { stop }. */
 export async function openMic(onFrame, onLevel) {
+  const ctx = audioContext();
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
   });
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  await ctx.audioWorklet.addModule('/js/mic-worklet.js');
+  if (!ctx.__micWorklet) {
+    await ctx.audioWorklet.addModule('/js/mic-worklet.js');
+    ctx.__micWorklet = true;
+  }
   const src = ctx.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(ctx, 'mic-capture');
   node.port.onmessage = ({ data }) => {
@@ -123,11 +141,14 @@ export async function openMic(onFrame, onLevel) {
   const mute = ctx.createGain();
   mute.gain.value = 0;
   node.connect(mute).connect(ctx.destination);
-  await ctx.resume();
+  if (ctx.state !== 'running') await ctx.resume();
   return {
     stop() {
       stream.getTracks().forEach((t) => t.stop());
-      ctx.close();
+      node.port.onmessage = null;
+      src.disconnect();
+      node.disconnect();
+      mute.disconnect();
     },
   };
 }

@@ -62,8 +62,9 @@ export const config = {
   elevenReplyVoiceId: env('ELEVENLABS_REPLY_VOICE_ID', ''), // English voice for replies; defaults to the Spanish one
   elevenModel: env('ELEVENLABS_MODEL', 'eleven_flash_v2_5'),
   ttsSpeed: num('TTS_SPEED', 1.08),
-  openaiTtsModel: env('OPENAI_TTS_MODEL', 'gpt-4o-mini-tts'),
-  openaiTtsVoice: env('OPENAI_TTS_VOICE', 'coral'),
+  // tts-1-hd keeps the same voice every time; gpt-4o-mini-tts is more expressive but can drift between requests.
+  openaiTtsModel: env('OPENAI_TTS_MODEL', 'tts-1-hd'),
+  openaiTtsVoice: env('OPENAI_TTS_VOICE', 'nova'),
 
   glossary: loadGlossary(),
 };

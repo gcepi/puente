@@ -1,4 +1,4 @@
-import { connect, CaptionPane, keepAwake, openMic, $ } from './common.js';
+import { connect, CaptionPane, keepAwake, openMic, audioContext, $ } from './common.js';
 import { PcmPlayer } from './player.js';
 
 // Replies from the team are spoken to the host in English.
@@ -109,8 +109,10 @@ function run(s) {
         location.reload();
       },
       onMessage: (m) => {
-        if (m.t === 'cap') (m.lang === 'en' ? en : es).set(m.id, m.text, m.final, m.who);
-        else if (m.t === 'state') {
+        if (m.t === 'cap') {
+          if (m.text !== '…') $('#hostErr').textContent = '';
+          (m.lang === 'en' ? en : es).set(m.id, m.text, m.final, m.who);
+        } else if (m.t === 'state') {
           $('#who').textContent = m.floor ? `${m.floor} is replying…` : `${m.listeners} listening`;
           $('#dot').className = `dot ${m.floor || talking ? 'live' : 'online'}`;
         } else if (m.t === 'error') $('#hostErr').textContent = m.message;
@@ -129,16 +131,21 @@ function run(s) {
   };
   async function down() {
     if (talking) return;
+    audioContext(); // Safari: start audio inside the tap, before any await
+    if (!player.ctx) player.unlock().catch(() => {});
     talking = true;
     paint();
     player.skip(); // stop any reply audio so it isn't recorded
     conn.send({ t: 'ptt', down: true });
     if (!mic) {
       try {
-        mic = await openMic(
-          (pcm) => (talking || Date.now() < tailUntil) && conn.buffered < 512 * 1024 && conn.send(pcm),
-          (level) => ($('#meter').style.width = `${talking ? Math.min(100, level * 400) : 0}%`)
-        );
+        mic = await Promise.race([
+          openMic(
+            (pcm) => (talking || Date.now() < tailUntil) && conn.buffered < 512 * 1024 && conn.send(pcm),
+            (level) => ($('#meter').style.width = `${talking ? Math.min(100, level * 400) : 0}%`)
+          ),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('it did not start within 5 seconds; check the browser allows the microphone for this site')), 5000)),
+        ]);
         $('#hostErr').textContent = '';
       } catch (e) {
         talking = false;
