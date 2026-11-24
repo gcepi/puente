@@ -1,4 +1,4 @@
-import { connect, CaptionPane, keepAwake, openMic, micPossible, audioContext, $ } from './common.js';
+import { connect, CaptionPane, keepAwake, openMic, micPossible, audioContext, micHelp, $ } from './common.js';
 import { PcmPlayer } from './player.js';
 
 const player = new PcmPlayer();
@@ -71,8 +71,10 @@ function start(code, name, withAudio) {
           paintTalk();
           paint();
         } else if (m.t === 'error') {
-          $('#talkBtn').textContent = m.message;
-          setTimeout(paintTalk, 2500);
+          notice = m.message;
+          noticeUntil = Date.now() + 3000;
+          paintTalk();
+          setTimeout(paintTalk, 3100);
         } else if (m.t === 'ended') {
           $('#title').textContent = 'La junta terminó';
         }
@@ -86,8 +88,16 @@ function start(code, name, withAudio) {
   let talking = false;
   let mic = null;
   const talkBtn = $('#talkBtn');
+  let notice = '';
+  let noticeUntil = 0;
   const paintTalk = () => {
     if (talking) return;
+    if (Date.now() < noticeUntil) {
+      talkBtn.disabled = false;
+      talkBtn.classList.remove('down');
+      talkBtn.textContent = notice;
+      return;
+    }
     const busy = floor && floor !== (name || 'Equipo');
     talkBtn.disabled = !!busy;
     talkBtn.classList.remove('down');
@@ -104,15 +114,17 @@ function start(code, name, withAudio) {
     talkBtn.classList.add('down');
     talkBtn.textContent = '🔴 Hablando… toca para enviar';
     player.skip(); // don't talk over the voice
-    conn.send({ t: 'talk', down: true });
     try {
       mic = await openMic((pcm) => talking && conn.send(pcm));
+      // Claim the floor only once the mic is really open.
+      conn.send({ t: 'talk', down: true });
       if (!talking) stopTalk(true);
-    } catch {
+    } catch (e) {
       talking = false;
-      conn.send({ t: 'talk', down: false });
-      talkBtn.textContent = 'Permite el micrófono para responder';
-      setTimeout(paintTalk, 3000);
+      notice = micHelp(e, 'es');
+      noticeUntil = Date.now() + 12000;
+      paintTalk();
+      setTimeout(paintTalk, 12100);
     }
   };
   const stopTalk = (force) => {

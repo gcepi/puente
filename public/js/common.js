@@ -123,9 +123,22 @@ export function audioContext() {
 /** Mic -> 24 kHz PCM16 frames. Call audioContext() inside the tap first. Returns { stop }. */
 export async function openMic(onFrame, onLevel) {
   const ctx = audioContext();
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-  });
+  // iPhone (Safari and Chrome alike): the player sets the audio session to 'playback'
+  // so the voice ignores the silent switch, but 'playback' forbids the microphone and
+  // getUserMedia fails without ever asking. Switch to play-and-record first.
+  setAudioSession('play-and-record');
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (e) {
+    if (e.name !== 'OverconstrainedError' && e.name !== 'TypeError') {
+      setAudioSession('playback');
+      throw e;
+    }
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  }
   if (!ctx.__micWorklet) {
     await ctx.audioWorklet.addModule('/js/mic-worklet.js');
     ctx.__micWorklet = true;
@@ -149,8 +162,32 @@ export async function openMic(onFrame, onLevel) {
       src.disconnect();
       node.disconnect();
       mute.disconnect();
+      setAudioSession('playback');
     },
   };
+}
+
+/** iOS 17+ Audio Session API; a no-op elsewhere. */
+export function setAudioSession(type) {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = type;
+  } catch {}
+}
+
+/** Plain-language help for a mic error, in Spanish for the crew and English for the host. */
+export function micHelp(e, lang = 'es') {
+  const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError';
+  const ios = /iPhone|iPad/.test(navigator.userAgent);
+  if (lang === 'es') {
+    if (!denied) return `El micrófono no inició (${e?.name || 'error'}).`;
+    return ios
+      ? 'Micrófono bloqueado. Toca "aA" en la barra de dirección › Configuración del sitio › Micrófono › Permitir. En Chrome: Ajustes del iPhone › Chrome › Micrófono.'
+      : 'Micrófono bloqueado. Toca el candado junto a la dirección › Micrófono › Permitir.';
+  }
+  if (!denied) return `Microphone didn't start (${e?.name || 'error'}: ${e?.message || ''}).`;
+  return ios
+    ? 'Microphone blocked. Tap "aA" in the address bar › Website Settings › Microphone › Allow.'
+    : 'Microphone blocked. Click the icon left of the address › Microphone › Allow, then reload.';
 }
 
 export const micPossible = () => !!navigator.mediaDevices?.getUserMedia && window.isSecureContext;

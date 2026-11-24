@@ -1,4 +1,4 @@
-import { connect, CaptionPane, keepAwake, openMic, audioContext, $ } from './common.js';
+import { connect, CaptionPane, keepAwake, openMic, audioContext, micHelp, $ } from './common.js';
 import { PcmPlayer } from './player.js';
 
 // Replies from the team are spoken to the host in English.
@@ -151,7 +151,7 @@ function run(s) {
         talking = false;
         paint();
         conn.send({ t: 'ptt', down: false });
-        $('#hostErr').textContent = `Microphone unavailable: ${e.message}. On a phone, the page must be opened over https.`;
+        $('#hostErr').textContent = micHelp(e, 'en');
       }
     }
   }
