@@ -91,24 +91,22 @@ function start(code, name, withAudio) {
     const busy = floor && floor !== (name || 'Equipo');
     talkBtn.disabled = !!busy;
     talkBtn.classList.remove('down');
-    talkBtn.textContent = busy ? `Habla: ${floor}` : '🎤 Mantén presionado para responder';
+    talkBtn.textContent = busy ? `Habla: ${floor}` : '🎤 Toca para responder';
   };
   if (micPossible()) {
     $('#live').classList.add('can-talk');
     $('#talkbar').classList.remove('hidden');
   }
-  const talkDown = async (e) => {
-    e.preventDefault();
-    if (talking || talkBtn.disabled) return;
+  // Tap to start, tap again to send. (A long press gets cancelled by iOS.)
+  const startTalk = async () => {
     talking = true;
-    talkBtn.setPointerCapture?.(e.pointerId);
     talkBtn.classList.add('down');
-    talkBtn.textContent = 'Hablando… suelta para enviar';
+    talkBtn.textContent = '🔴 Hablando… toca para enviar';
     player.skip(); // don't talk over the voice
     conn.send({ t: 'talk', down: true });
     try {
       mic = await openMic((pcm) => talking && conn.send(pcm));
-      if (!talking) talkUp(); // released while the mic was opening
+      if (!talking) stopTalk(true);
     } catch {
       talking = false;
       conn.send({ t: 'talk', down: false });
@@ -116,22 +114,24 @@ function start(code, name, withAudio) {
       setTimeout(paintTalk, 3000);
     }
   };
-  const talkUp = () => {
-    if (!talking && !mic) return;
-    talking = false;
+  const stopTalk = (force) => {
+    if (!talking && !force) return;
     const m = mic;
     mic = null;
-    // Keep the last syllable: stop sending a beat after release.
+    talkBtn.textContent = 'Enviando…';
+    // Keep the last syllable: stop sending a beat after the tap.
     setTimeout(() => {
+      talking = false;
       m?.stop();
       conn.send({ t: 'talk', down: false });
       paintTalk();
-    }, 350);
+    }, 400);
   };
-  talkBtn.addEventListener('pointerdown', talkDown);
-  talkBtn.addEventListener('pointerup', talkUp);
-  talkBtn.addEventListener('pointercancel', talkUp);
-  talkBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+  talkBtn.addEventListener('click', () => {
+    if (talkBtn.disabled) return;
+    if (!talking) startTalk();
+    else if (mic) stopTalk();
+  });
 
   $('#audioBtn').onclick = async () => {
     if (!player.ctx) await player.unlock().catch(() => {});

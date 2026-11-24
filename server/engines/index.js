@@ -2,11 +2,13 @@ import { config } from '../config.js';
 import { MockEngine } from './mock.js';
 import { OpenAiTranslateEngine } from './openai-translate.js';
 import { PipelineEngine } from './pipeline.js';
+import { TurnEngine } from './turn.js';
+import { createOpenAiTranscriber, createOpenAiTranslator } from '../providers/openai.js';
 import { createDeepgramStt } from '../providers/deepgram.js';
 import { createClaudeTranslator } from '../providers/translate-claude.js';
 import { createElevenLabsTts, createOpenAiTts } from '../providers/tts.js';
 
-export const ENGINES = ['mock', 'openai-translate', 'pipeline'];
+export const ENGINES = ['turn', 'openai-translate', 'pipeline', 'mock'];
 
 /**
  * @param {string} name engine name
@@ -15,6 +17,21 @@ export const ENGINES = ['mock', 'openai-translate', 'pipeline'];
  */
 export function createEngine(name, hooks, direction = 'en-es') {
   const [src, dst] = direction.split('-');
+  if (name === 'turn') {
+    // One OpenAI key does it all; Claude translates instead if an Anthropic key is set.
+    const translate = config.anthropicKey
+      ? createClaudeTranslator({ apiKey: config.anthropicKey, model: config.translateModel, glossary: config.glossary, direction })
+      : createOpenAiTranslator({ apiKey: config.openaiKey, model: config.openaiTranslateModel, glossary: config.glossary, direction });
+    return new TurnEngine(
+      hooks,
+      {
+        transcribe: createOpenAiTranscriber({ apiKey: config.openaiKey, model: config.openaiSttModel, glossary: config.glossary }),
+        translate,
+        speak: createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst }),
+      },
+      { src, dst }
+    );
+  }
   if (name === 'openai-translate') {
     return new OpenAiTranslateEngine(hooks, {
       apiKey: config.openaiKey,

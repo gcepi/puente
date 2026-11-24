@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#1f6f5c" />
+  <meta name="theme-color" content="#093153" />
   <title>Puente Host</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" />
@@ -38,19 +38,11 @@
         <span class="small" id="engineName" style="margin-left:auto"></span>
       </div>
 
-      <button class="mic" id="micBtn">🎙 Start translating</button>
+      <button class="ptt" id="pttBtn">
+        <span id="pttLabel">Hold to talk</span>
+        <span class="small" id="pttHint">Release and the Spanish voice repeats it · or hold Space</span>
+      </button>
       <div class="meter"><i id="meter"></i></div>
-
-      <div>
-        <p class="small" style="margin:0 0 6px">When does the voice speak?</p>
-        <div class="seg" id="modes">
-          <button data-mode="auto" aria-pressed="true">When I pause</button>
-          <button data-mode="ptt" aria-pressed="false">Hold to talk</button>
-          <button data-mode="manual" aria-pressed="false">When I tap</button>
-        </div>
-      </div>
-      <button class="ptt hidden" id="pttBtn">Hold to talk <span class="small">(or Space)</span></button>
-      <button class="btn secondary hidden" id="flushBtn">Translate now <span class="small">(Enter)</span></button>
       <p class="err" id="hostErr"></p>
       <div class="row">
         <a class="btn secondary" id="transcriptBtn" style="flex:1;text-align:center;text-decoration:none;font-size:15px">Download transcript</a>
@@ -59,9 +51,9 @@
     </aside>
 
     <section class="monitor">
-      <div class="col"><div class="label">English · what I said</div><div class="pane en" id="enPane"></div></div>
+      <div class="col"><div class="label">English</div><div class="pane en" id="enPane"></div></div>
       <div class="divider"></div>
-      <div class="col"><div class="label">Español · what they hear</div><div class="pane es" id="esPane"></div></div>
+      <div class="col"><div class="label">Español</div><div class="pane es" id="esPane"></div></div>
     </section>
   </main>
   <script type="module" src="/js/host.js"></script>

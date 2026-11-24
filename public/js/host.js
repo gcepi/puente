@@ -22,7 +22,8 @@ const store = {
 
 const LABELS = {
   mock: 'Demo (no keys, fake voice)',
-  'openai-translate': 'OpenAI live interpreter (fastest)',
+  turn: 'Push to talk, then it repeats in Spanish',
+  'openai-translate': 'OpenAI live interpreter (talks while you talk)',
   pipeline: 'Glossary + chosen voice (most control)',
 };
 
@@ -36,9 +37,9 @@ async function setup() {
     o.disabled = e.missing.length > 0;
     sel.appendChild(o);
   }
-  const saved = store.get('puente.engine');
+  const saved = store.get('puente.engine.v2');
   const usable = cfg.engines.filter((e) => !e.missing.length).map((e) => e.name);
-  sel.value = usable.includes(saved) ? saved : usable.includes(cfg.engine) ? cfg.engine : 'mock';
+  sel.value = [saved, 'turn', cfg.engine, 'mock'].find((n) => usable.includes(n));
   const missingNote = cfg.engines
     .filter((e) => e.missing.length)
     .map((e) => `${LABELS[e.name].split(' (')[0]}: add ${e.missing.join(', ')}`)
@@ -72,7 +73,7 @@ async function setup() {
     }
     if (!r.ok) return ($('#setupErr').textContent = body.error || 'Could not start');
     store.set('puente.pass', $('#passcode').value, true);
-    store.set('puente.engine', sel.value, true);
+    store.set('puente.engine.v2', sel.value, true);
     store.set('puente.session', JSON.stringify(body));
     run(body);
   });
@@ -91,19 +92,16 @@ function run(s) {
 
   const en = new CaptionPane($('#enPane'));
   const es = new CaptionPane($('#esPane'));
-  let mode = 'auto';
-  let live = false;
   let mic = null;
+  let talking = false;
+  let tailUntil = 0;
 
   const conn = connect(
     { role: 'host', room: s.code, token: s.hostToken },
     {
-      onOpen: () => {
-        conn.send({ t: 'mode', mode });
-        if (mic) conn.send({ t: 'mic', on: true });
-      },
+      onOpen: () => conn.send({ t: 'mode', mode: 'ptt' }),
       onStatus: (st) => {
-        if (st === 'offline') $('#hostErr').textContent = 'Connection lost — reconnecting…';
+        if (st === 'offline') $('#hostErr').textContent = 'Connection lost. Reconnecting…';
         if (st === 'online') $('#hostErr').textContent = '';
       },
       onGone: () => {
@@ -113,9 +111,8 @@ function run(s) {
       onMessage: (m) => {
         if (m.t === 'cap') (m.lang === 'en' ? en : es).set(m.id, m.text, m.final, m.who);
         else if (m.t === 'state') {
-          live = m.live;
           $('#who').textContent = m.floor ? `${m.floor} is replying…` : `${m.listeners} listening`;
-          $('#dot').className = `dot ${live ? 'live' : 'online'}`;
+          $('#dot').className = `dot ${m.floor || talking ? 'live' : 'online'}`;
         } else if (m.t === 'error') $('#hostErr').textContent = m.message;
       },
       onAudio: (buf) => player.play(buf),
@@ -124,68 +121,59 @@ function run(s) {
   // Browsers only allow sound after a tap; the first tap anywhere unlocks reply audio.
   document.addEventListener('pointerdown', () => !player.ctx && player.unlock().catch(() => {}), { once: true });
 
-  async function startMic() {
-    try {
-      mic = await openMic(
-        (pcm) => conn.buffered < 512 * 1024 && conn.send(pcm),
-        (level) => ($('#meter').style.width = `${Math.min(100, level * 400)}%`)
-      );
-      conn.send({ t: 'mic', on: true });
-      $('#micBtn').textContent = '■ Stop translating';
-      $('#micBtn').classList.add('on');
-      $('#hostErr').textContent = '';
-    } catch (e) {
-      $('#hostErr').textContent = `Microphone unavailable: ${e.message}. On a phone, the page must be opened over https.`;
+  // ---- push to talk: hold, speak, release; the Spanish voice repeats it ----
+  const pb = $('#pttBtn');
+  const paint = () => {
+    pb.classList.toggle('down', talking);
+    $('#pttLabel').textContent = talking ? 'Listening… release to translate' : 'Hold to talk';
+  };
+  async function down() {
+    if (talking) return;
+    talking = true;
+    paint();
+    player.skip(); // stop any reply audio so it isn't recorded
+    conn.send({ t: 'ptt', down: true });
+    if (!mic) {
+      try {
+        mic = await openMic(
+          (pcm) => (talking || Date.now() < tailUntil) && conn.buffered < 512 * 1024 && conn.send(pcm),
+          (level) => ($('#meter').style.width = `${talking ? Math.min(100, level * 400) : 0}%`)
+        );
+        $('#hostErr').textContent = '';
+      } catch (e) {
+        talking = false;
+        paint();
+        conn.send({ t: 'ptt', down: false });
+        $('#hostErr').textContent = `Microphone unavailable: ${e.message}. On a phone, the page must be opened over https.`;
+      }
     }
   }
-
-  function stopMic() {
-    mic?.stop();
-    mic = null;
-    conn.send({ t: 'mic', on: false });
-    $('#micBtn').textContent = '🎙 Start translating';
-    $('#micBtn').classList.remove('on');
-    $('#meter').style.width = '0';
+  function up() {
+    if (!talking) return;
+    talking = false;
+    paint();
+    // Keep the last syllable: send a beat of audio after release.
+    tailUntil = Date.now() + 350;
+    setTimeout(() => conn.send({ t: 'ptt', down: false }), 350);
   }
-
-  $('#micBtn').onclick = () => (mic ? stopMic() : startMic());
-
-  const setMode = (m) => {
-    mode = m;
-    for (const b of document.querySelectorAll('#modes button')) b.setAttribute('aria-pressed', String(b.dataset.mode === m));
-    $('#pttBtn').classList.toggle('hidden', m !== 'ptt');
-    $('#flushBtn').classList.toggle('hidden', m !== 'manual');
-    conn.send({ t: 'mode', mode: m });
-  };
-  document.querySelectorAll('#modes button').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
-
-  const ptt = (down) => {
-    $('#pttBtn').classList.toggle('down', down);
-    conn.send({ t: 'ptt', down });
-  };
-  const pb = $('#pttBtn');
   pb.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    pb.setPointerCapture(e.pointerId);
-    ptt(true);
+    pb.setPointerCapture?.(e.pointerId);
+    down();
   });
-  pb.addEventListener('pointerup', () => ptt(false));
-  pb.addEventListener('pointercancel', () => ptt(false));
+  pb.addEventListener('pointerup', up);
+  pb.addEventListener('pointercancel', up);
   pb.addEventListener('contextmenu', (e) => e.preventDefault());
-  $('#flushBtn').onclick = () => conn.send({ t: 'flush' });
-
   document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.repeat) return;
-    if (e.code === 'Space' && mode === 'ptt') {
-      e.preventDefault();
-      ptt(true);
-    } else if (e.code === 'Enter' && mode === 'manual') conn.send({ t: 'flush' });
+    if (e.target.tagName === 'INPUT' || e.repeat || e.code !== 'Space') return;
+    e.preventDefault();
+    down();
   });
-  document.addEventListener('keyup', (e) => e.code === 'Space' && mode === 'ptt' && ptt(false));
+  document.addEventListener('keyup', (e) => e.code === 'Space' && up());
 
   $('#endBtn').onclick = () => {
     if (!confirm('End the meeting for everyone? Download the transcript first if you need it.')) return;
-    stopMic();
+    mic?.stop();
     conn.send({ t: 'end' });
     store.set('puente.session', '');
     setTimeout(() => location.reload(), 300);

@@ -69,14 +69,27 @@ try {
 
   await host.waitForSelector('#who:text("2 listening")', { timeout: 5000 });
 
-  // Speak (fake mic) in auto mode until two phrases have been translated.
-  await host.click('#micBtn');
-  await l1.waitForFunction(() => document.querySelectorAll('#esPane .line:not(.partial)').length >= 2, null, { timeout: 30000 });
+  // Push to talk: nothing happens until the host holds the button.
+  const hold = async (page, sel, ms) => {
+    const b = await (await page.$(sel)).boundingBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(ms);
+    await page.mouse.up();
+  };
+  await host.waitForTimeout(800);
+  if ((await l1.$$eval('#enPane .line', (n) => n.length)) !== 0) fail('captions appeared before anyone talked');
+  // Hold long enough for the mock to "hear" the first sentence, release, then the voice speaks.
+  await hold(host, '#pttBtn', 3600);
+  await l1.waitForFunction(() => document.querySelectorAll('#esPane .line:not(.partial)').length >= 1, null, { timeout: 15000 });
+  await hold(host, '#pttBtn', 2500);
+  await l1.waitForFunction(() => document.querySelectorAll('#esPane .line:not(.partial)').length >= 2, null, { timeout: 15000 });
   const es = await l1.$$eval('#esPane .line', (n) => n.map((x) => x.textContent));
   const en = await l1.$$eval('#enPane .line', (n) => n.map((x) => x.textContent));
   console.log('EN:', en.slice(0, 2));
   console.log('ES:', es.slice(0, 2));
   if (!es[0]?.startsWith('Buenos días')) fail('first Spanish caption missing');
+  if (!en[0]?.startsWith('Good morning')) fail('English caption missing');
   await l1.waitForTimeout(1500);
   const voice = await l1.evaluate(() => window.__puente.player.stats);
   console.log('listener 1 voice:', voice);
@@ -85,33 +98,18 @@ try {
   if (textOnly.chunks !== 0) fail('text-only listener should not play audio');
   const l2es = await l2.$$eval('#esPane .line', (n) => n.length);
   if (l2es < 2) fail('text-only listener missing captions');
-
-  // Push-to-talk: nothing is heard while the button is up; release ends the phrase.
-  await host.click('#modes button[data-mode=ptt]');
-  await host.waitForTimeout(1200);
-  const before = await l1.$$eval('#enPane .line', (n) => n.length);
-  await host.waitForTimeout(1500);
   const idle = await l1.$$eval('#enPane .line', (n) => n.length);
-  if (idle !== before) fail('push-to-talk leaked audio while button was up');
-  const btn = await host.$('#pttBtn');
-  const box = await btn.boundingBox();
-  await host.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await host.mouse.down();
-  await host.waitForTimeout(1400);
-  await host.mouse.up();
-  await l1.waitForFunction((n) => document.querySelectorAll('#enPane .line').length > n, idle, { timeout: 8000 });
-  console.log('push-to-talk phrase delivered');
+  await host.waitForTimeout(1500);
+  if ((await l1.$$eval('#enPane .line', (n) => n.length)) !== idle) fail('audio leaked while the button was up');
+  console.log('push-to-talk turns delivered');
 
   // Reply: listener 1 holds the talk button and speaks Spanish; the host sees and hears English.
-  await host.click('#modes button[data-mode=auto]');
-  const tb = await (await l1.$('#talkBtn')).boundingBox();
-  await l1.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
-  await l1.mouse.down();
+  await l1.click('#talkBtn');
   await host.waitForSelector('#who:text("Pedro is replying")', { timeout: 5000 });
   const l2Talk = await l2.$('#talkBtn');
   if (l2Talk && (await l2Talk.isVisible()) && !(await l2Talk.isDisabled())) fail('second listener could talk over the first');
   await l1.waitForTimeout(3600);
-  await l1.mouse.up();
+  await l1.click('#talkBtn');
   await host.waitForFunction(() => [...document.querySelectorAll('#enPane .line')].some((l) => l.textContent.includes('What time do you need 204')), null, { timeout: 8000 });
   const replyRow = await host.$$eval('#esPane .line', (n) => n.map((x) => x.textContent).find((t) => t.includes('¿A qué hora')));
   if (!replyRow?.startsWith('Pedro')) fail(`reply not labeled with speaker: ${replyRow}`);

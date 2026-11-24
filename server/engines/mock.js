@@ -63,7 +63,7 @@ export class MockEngine {
     const [said] = this.script[this.line % this.script.length];
     const parts = said.split(' ');
     if (this.word >= parts.length) {
-      if (this.mode !== 'manual') this.commit();
+      if (this.mode === 'auto') this.commit();
       return;
     }
     this.word++;

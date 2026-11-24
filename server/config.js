@@ -35,12 +35,14 @@ export const config = {
   // the same way (and a printed QR code keeps working). Set ROOM_CODE=random for a
   // fresh random code per meeting.
   roomCode: /^\d{3}$/.test(env('ROOM_CODE', '750')) ? env('ROOM_CODE', '750') : '',
-  // Which engine translates: mock | openai-translate | pipeline
-  engine: env('ENGINE', 'mock'),
+  // Which engine translates: turn | openai-translate | pipeline | mock
+  engine: env('ENGINE', 'turn'),
   maxSessionMinutes: num('MAX_SESSION_MINUTES', 120),
   sampleRate: 24000, // PCM16 mono everywhere: mic in, voice out
 
   openaiKey: env('OPENAI_API_KEY', ''),
+  openaiSttModel: env('OPENAI_STT_MODEL', 'gpt-4o-mini-transcribe'),
+  openaiTranslateModel: env('OPENAI_TRANSLATE_MODEL', 'gpt-4.1-mini'),
   openaiTranslateUrl: env(
     'OPENAI_TRANSLATE_URL',
     'wss://api.openai.com/v1/realtime/translations?model=gpt-realtime-translate'
@@ -68,7 +70,7 @@ export const config = {
 
 export function engineProblems(name = config.engine) {
   const missing = [];
-  if (name === 'openai-translate' && !config.openaiKey) missing.push('OPENAI_API_KEY');
+  if ((name === 'openai-translate' || name === 'turn') && !config.openaiKey) missing.push('OPENAI_API_KEY');
   if (name === 'pipeline') {
     if (!config.deepgramKey) missing.push('DEEPGRAM_API_KEY');
     if (!config.anthropicKey) missing.push('ANTHROPIC_API_KEY');

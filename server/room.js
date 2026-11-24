@@ -90,6 +90,7 @@ class Room {
       this.sendState();
     } else if (msg.t === 'ptt') {
       this.pttDown = !!msg.down;
+      if (this.pttDown && !this.engine) this.startEngine();
       if (!this.pttDown) this.engine?.flush();
     } else if (msg.t === 'flush') this.engine?.flush();
     else if (msg.t === 'end') this.end();

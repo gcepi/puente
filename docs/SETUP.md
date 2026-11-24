@@ -33,8 +33,8 @@ The blueprint starts on Render's **free** plan (no card needed). Free sleeps aft
 ## 4. Smoke test (10 min)
 
 1. On your laptop, open `https://…onrender.com/host`. Pick **Demo** and start. On your phone, scan the QR code and tap *Entrar con voz*. You should see scripted captions and hear a tone "voice". That proves rooms, captions, and audio on your phone.
-2. End it. Start again with **OpenAI live interpreter**, tap Start translating, and talk. Spanish should appear and play on your phone.
-3. Try replying: on the phone, hold *Mantén presionado para responder*, say a sentence in Spanish, and release.
+2. End it. Start again with **Push to talk, then it repeats in Spanish**. Hold the big button (or Space), say a sentence, and release. English, then Spanish, appear and the Spanish voice plays on your phone.
+3. Try replying: on the phone, tap *Toca para responder*, say a sentence in Spanish, and tap again to send.
 
 Note anything odd, especially on iPhone: silent switch on/off, screen dimming, Bluetooth vs. wired earbuds. Send the notes to Claude.
 

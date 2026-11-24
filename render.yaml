@@ -19,7 +19,7 @@ services:
       - key: NODE_VERSION
         value: "22"
       - key: ENGINE
-        value: openai-translate
+        value: turn
       - key: TTS_PROVIDER
         value: openai
       - key: OPENAI_API_KEY

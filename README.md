@@ -1,6 +1,6 @@
 # Puente
 
-Live English → Mexican Spanish translation for in-person meetings. The speaker talks. Everyone else scans a QR code and gets **captions and a natural voice** on their own phone, with earbuds. Crew members can **hold a button to reply in Spanish**, and the speaker hears English.
+Live English → Mexican Spanish translation for in-person meetings. The speaker talks. Everyone else scans a QR code and gets **captions and a natural voice** on their own phone, with earbuds. Crew members can **tap to reply in Spanish**, and the speaker hears English.
 
 Works on iPhone and Android as a web page. No app, no accounts for listeners.
 
@@ -11,6 +11,7 @@ Works on iPhone and Android as a web page. No app, no accounts for listeners.
 
 | Engine | What | Keys |
 |---|---|---|
+| `turn` (default) | Push to talk: hold, speak, release, and it repeats in Spanish. OpenAI transcribes, translates, and speaks. The voice never talks over you. | `OPENAI_API_KEY` |
 | `mock` | Demo: scripted captions plus a tone "voice". Exercises everything with no keys. | none |
 | `openai-translate` | OpenAI `gpt-realtime-translate`: simultaneous speech-to-speech | `OPENAI_API_KEY` |
 | `pipeline` | Deepgram speech recognition → Claude (Haiku 5.5, glossary, Mexican Spanish) → ElevenLabs or OpenAI voice | `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY`, voice key |
