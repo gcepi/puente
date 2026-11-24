@@ -48,9 +48,9 @@ test('nothing happens while held; on release: transcript, then each sentence voi
   assert.deepEqual(out.captions.filter((c) => c.final).map((c) => c.text), ['said 1']);
   assert.deepEqual(out.cues.map((c) => c.text), ['Hola.', 'said 1.', 'Adiós.', '']);
   assert.ok(out.cues.at(-1).last, 'an end marker closes the line');
-  assert.ok(out.cues.slice(0, 3).every((c) => c.seconds > 0), 'each cue carries an estimated length');
-  // Each sentence: text just before its audio streams, then its exact length.
-  assert.deepEqual(out.events.slice(0, 3), ['cue:Hola.', 'audio:48000', 'len:1']);
+  assert.ok(out.cues.slice(0, 3).every((c) => c.seconds === 1), 'each cue carries its exact audio length');
+  // Each sentence is fully generated, then its text and all of its audio go out together.
+  assert.deepEqual(out.events.slice(0, 6), ['cue:Hola.', 'audio:9600', 'audio:9600', 'audio:9600', 'audio:9600', 'audio:9600']);
 });
 
 test('the first sentence is voiced before the translation has finished', async () => {

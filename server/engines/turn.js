@@ -54,7 +54,7 @@ export class SentenceSplitter {
   }
   /** @param {string} full the complete text, used when nothing was streamed */
   end(full) {
-    if (!this.streamed && full) this.buf = full;
+    if (!this.streamed && full) this.push(full); // arrived in one piece: still split into sentences
     this.emit(this.buf);
     this.buf = '';
   }
@@ -91,10 +91,11 @@ export class TurnEngine {
     this.deps = deps;
     this.src = src;
     this.dst = dst;
-    this.charsPerSecond = 15 * speed; // only for the first guess at a sentence's length
     this.seq = 0;
     this.context = [];
     this.chain = Promise.resolve();
+    this.synthRunning = 0;
+    this.synthWaiters = [];
     this.reset();
   }
 
@@ -196,10 +197,12 @@ export class TurnEngine {
     stats.words = (text.match(/[\p{L}\p{N}']+/gu) ?? []).length;
     this.firstVoiceStats = stats;
 
-    // Translate the whole turn as a stream; each finished sentence is voiced right away, in order.
+    // Translate the whole turn as a stream. Each finished sentence starts its voice right away
+    // (up to 3 in parallel) and is sent in order once fully generated, so playback never stutters.
     let speech = Promise.resolve();
     const splitter = new SentenceSplitter((sentence) => {
-      speech = speech.then(() => this.say(id, sentence));
+      const audio = this.synth(sentence);
+      speech = speech.then(() => this.send(id, sentence, audio));
     });
     let out;
     try {
@@ -217,33 +220,41 @@ export class TurnEngine {
     this.hooks.stats?.({ id, ...stats });
   }
 
-  /**
-   * Voice one sentence, streaming its audio as it is generated. Its text goes out just
-   * before the first audio with an estimated length; the exact length follows when the
-   * sentence is done, so phones keep the word-by-word reveal in step with the voice.
-   */
-  async say(id, sentence) {
-    let bytes = 0;
-    const started = () => bytes > 0;
+  /** Generate one sentence's voice in full, retrying once. At most 3 run at the same time. */
+  async synth(sentence) {
+    while (this.synthRunning >= 3) await new Promise((r) => this.synthWaiters.push(r));
+    this.synthRunning++;
     try {
-      await this.deps.speak(sentence, (b) => {
-        if (!started()) {
-          const s = this.firstVoiceStats;
-          if (s && s.releasedAt && s.voiceIn == null) s.voiceIn = Date.now() - s.releasedAt;
-          this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: sentence.length / this.charsPerSecond, last: false });
+      for (let attempt = 1; ; attempt++) {
+        const chunks = [];
+        try {
+          await this.deps.speak(sentence, (b) => chunks.push(b));
+          return { audio: Buffer.concat(chunks) };
+        } catch (error) {
+          if (attempt >= 2) return { error };
         }
-        bytes += b.length;
-        this.hooks.audio(b);
-      });
-    } catch (e) {
-      this.hooks.error(`Voice: ${e.message}`);
+      }
+    } finally {
+      this.synthRunning--;
+      this.synthWaiters.shift()?.();
     }
-    if (!started()) {
-      // No audio at all: still show the words.
-      this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: 0, last: false });
+  }
+
+  /**
+   * Send one sentence: its text with the exact audio length, then all of its audio at once.
+   * Phones reveal the words in step with the voice.
+   */
+  async send(id, sentence, pending) {
+    const { audio, error } = await pending;
+    if (error) this.hooks.error(`Voice: ${error.message}`);
+    if (!audio?.length) {
+      this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: 0, last: false }); // still show the words
       return;
     }
-    this.hooks.cueLength?.({ id, lang: this.dst, seconds: bytes / 2 / RATE });
+    const s = this.firstVoiceStats;
+    if (s && s.releasedAt && s.voiceIn == null) s.voiceIn = Date.now() - s.releasedAt;
+    this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: audio.length / 2 / RATE, last: false });
+    for (let o = 0; o < audio.length; o += 9600) this.hooks.audio(audio.subarray(o, o + 9600));
   }
 
   async stop() {

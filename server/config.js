@@ -41,8 +41,9 @@ export const config = {
   sampleRate: 24000, // PCM16 mono everywhere: mic in, voice out
 
   openaiKey: env('OPENAI_API_KEY', ''),
-  openaiSttModel: env('OPENAI_STT_MODEL', 'gpt-4o-mini-transcribe'),
-  openaiTranslateModel: env('OPENAI_TRANSLATE_MODEL', 'gpt-4.1-mini'),
+  openaiSttModel: env('OPENAI_STT_MODEL', 'gpt-4o-transcribe'),
+  openaiTranslateModel: env('OPENAI_TRANSLATE_MODEL', 'gpt-4.1'),
+  openaiTranslateFallback: env('OPENAI_TRANSLATE_FALLBACK', 'gpt-4.1-mini'),
   openaiTranslateUrl: env(
     'OPENAI_TRANSLATE_URL',
     'wss://api.openai.com/v1/realtime/translations?model=gpt-realtime-translate'
@@ -61,7 +62,8 @@ export const config = {
   elevenVoiceId: env('ELEVENLABS_VOICE_ID', ''),
   elevenReplyVoiceId: env('ELEVENLABS_REPLY_VOICE_ID', ''), // English voice for replies; defaults to the Spanish one
   elevenModel: env('ELEVENLABS_MODEL', 'eleven_flash_v2_5'),
-  ttsSpeed: num('TTS_SPEED', 1.15), // speaking pace; 1 = normal
+  // Speaking pace; 1 = normal. Tolerates '1.15x'. Kept between 0.8 and 1.4.
+  ttsSpeed: Math.min(1.4, Math.max(0.8, parseFloat(env('TTS_SPEED', '1.15')) || 1.15)),
   // tts-1-hd keeps the same voice every time; gpt-4o-mini-tts is more expressive but can drift between requests.
   openaiTtsModel: env('OPENAI_TTS_MODEL', 'tts-1-hd'),
   openaiTtsVoice: env('OPENAI_TTS_VOICE', 'onyx'), // onyx: OpenAI's deepest male voice

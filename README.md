@@ -11,7 +11,7 @@ Works on iPhone and Android as a web page. No app, no accounts for listeners.
 
 | Engine | What | Keys |
 |---|---|---|
-| `turn` (default) | Push to talk: hold, speak, release, and it repeats in Spanish. OpenAI transcribes, translates, and speaks. The voice never talks over you. | `OPENAI_API_KEY` |
+| `turn` (default) | Push to talk: hold, speak, release, and it repeats in Spanish. OpenAI `gpt-4o-transcribe` (whisper-1 as a check), `gpt-4.1` translation, `tts-1-hd` voice. The voice never talks over you. | `OPENAI_API_KEY` |
 | `mock` | Demo: scripted captions plus a tone "voice". Exercises everything with no keys. | none |
 | `openai-translate` | OpenAI `gpt-realtime-translate`: simultaneous speech-to-speech | `OPENAI_API_KEY` |
 | `pipeline` | Deepgram speech recognition → Claude (Haiku 5.5, glossary, Mexican Spanish) → ElevenLabs or OpenAI voice | `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY`, voice key |

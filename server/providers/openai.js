@@ -76,7 +76,15 @@ export function createOpenAiTranscriber({ apiKey, model, fallbackModel = 'whispe
   }
 
   return async function transcribe(pcm, language, voicedSecs = 0) {
-    let text = await withRetry(pcm, language, model);
+    let text;
+    try {
+      text = await withRetry(pcm, language, model);
+    } catch (e) {
+      // The main model refused or kept failing: use the fallback rather than lose the turn.
+      if (!fallbackModel || fallbackModel === model) throw e;
+      log(`${model} failed (${e.message}); using ${fallbackModel}`);
+      return withRetry(pcm, language, fallbackModel);
+    }
     const words = countWords(text);
     const tooShort = voicedSecs >= 0.8 && (words === 0 || (voicedSecs >= 2 && words < voicedSecs));
     if (tooShort && fallbackModel && fallbackModel !== model) {
@@ -92,25 +100,34 @@ export function createOpenAiTranscriber({ apiKey, model, fallbackModel = 'whispe
   };
 }
 
-export function createOpenAiTranslator({ apiKey, model, glossary, direction }) {
+export function createOpenAiTranslator({ apiKey, model, fallbackModel, glossary, direction, log = () => {} }) {
+  let useModel = model;
   const system = buildSystemPrompt(glossary, direction);
   return async function translate(text, context, onDelta) {
     const ctx = context.length
       ? `Earlier in this meeting (context only):\n${context.map((c) => `SAID: ${c.src}\nTRANSLATED: ${c.dst}`).join('\n')}\n\n`
       : '';
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      signal: AbortSignal.timeout(30_000),
-      body: JSON.stringify({
-        model,
-        stream: true,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: `${ctx}<speech>${text}</speech>` },
-        ],
-      }),
-    });
+    const request = (m) =>
+      fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        signal: AbortSignal.timeout(30_000),
+        body: JSON.stringify({
+          model: m,
+          stream: true,
+          temperature: 0.2,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: `${ctx}<speech>${text}</speech>` },
+          ],
+        }),
+      });
+    let res = await request(useModel);
+    if (!res.ok && (res.status === 404 || res.status === 400 || res.status === 403) && fallbackModel && useModel !== fallbackModel) {
+      log(`translation model ${useModel} refused (${res.status}); using ${fallbackModel}`);
+      useModel = fallbackModel;
+      res = await request(useModel);
+    }
     if (!res.ok) await check(res, 'OpenAI translation');
     // Server-sent events: lines of "data: {json}", ending with "data: [DONE]".
     let out = '';

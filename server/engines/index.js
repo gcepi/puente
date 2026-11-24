@@ -21,13 +21,21 @@ export function createEngine(name, hooks, direction = 'en-es') {
     // One OpenAI key does it all; Claude translates instead if an Anthropic key is set.
     const translate = config.anthropicKey
       ? createClaudeTranslator({ apiKey: config.anthropicKey, model: config.translateModel, glossary: config.glossary, direction })
-      : createOpenAiTranslator({ apiKey: config.openaiKey, model: config.openaiTranslateModel, glossary: config.glossary, direction });
+      : createOpenAiTranslator({
+          apiKey: config.openaiKey,
+          model: config.openaiTranslateModel,
+          fallbackModel: config.openaiTranslateFallback,
+          glossary: config.glossary,
+          direction,
+          log: (m) => console.log(`[translate] ${m}`),
+        });
     return new TurnEngine(
       hooks,
       {
         transcribe: createOpenAiTranscriber({
           apiKey: config.openaiKey,
           model: config.openaiSttModel,
+          fallbackModel: 'whisper-1',
           names: (config.glossary.names ?? []).map((n) => n.name),
           log: (m) => console.log(`[transcribe] ${m}`),
         }),

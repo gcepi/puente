@@ -135,3 +135,36 @@ test("Graham's pattern: a long turn with pauses, then a short one, then another,
   assert.equal(transcribed.length, 5, 'the long turn went out in three parts while held');
   assert.equal(spoken[0], `${[10, 13, 8].reduce((a, b) => a + b)} palabras.`, 'all parts of the long turn were kept');
 });
+
+test('voice: a failed sentence is retried once, and its words still show if it fails twice', async () => {
+  const cues = [];
+  const errors = [];
+  let calls = 0;
+  const engine = new TurnEngine(
+    { caption: () => {}, cue: (c) => cues.push(c), audio: () => {}, error: (e) => errors.push(e) },
+    {
+      transcribe: async () => 'hello there',
+      translate: async () => 'Hola. Adiós.',
+      speak: async (t, onAudio) => {
+        calls++;
+        if (t === 'Hola.' && calls === 1) throw new Error('blip'); // first try fails, retry works
+        if (t === 'Adiós.') throw new Error('down');
+        onAudio(Buffer.alloc(4800));
+      },
+    }
+  );
+  engine.audio(tone(1));
+  engine.flush();
+  await engine.chain;
+  assert.deepEqual(cues.map((c) => [c.text, c.seconds > 0]), [['Hola.', true], ['Adiós.', false], ['', false]]);
+  assert.equal(errors.length, 1);
+});
+
+test('transcription model refused: the turn falls back to whisper-1 instead of failing', async () => {
+  const calls = mockFetch({ 'gpt-4o-mini-transcribe': [new Error('OpenAI transcription 404: model not found'), new Error('again')], 'whisper-1': ['Good morning team.'] });
+  const t = createOpenAiTranscriber({ apiKey: 'k', model: 'gpt-4o-mini-transcribe', names: [] });
+  const text = await t(tone(1), 'en', 1);
+  globalThis.fetch = realFetch;
+  assert.equal(text, 'Good morning team.');
+  assert.equal(calls.at(-1).model, 'whisper-1');
+});
