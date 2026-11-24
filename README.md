@@ -42,7 +42,7 @@ server/room.js             a meeting: host, listeners, reply floor, transcript, 
 server/engines/            mock | openai-translate | pipeline (same interface)
 server/providers/          Deepgram STT, Claude translation, ElevenLabs/OpenAI TTS
 server/glossary.json       trade terms (EN → es-MX); edit freely
-public/                    listener page (/ and /j/CODE), host page (/host), PWA bits
+public/                    listener page (/ and /j/123), host page (/host), PWA bits
 ```
 
 ## Verify on first live run

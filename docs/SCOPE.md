@@ -25,14 +25,14 @@ Mostly no. One product is close, and you should know about it.
 ```
  Your phone/laptop (host)                     Server (one small web service)                 Crew phones (listeners)
  ┌──────────────────┐   mic audio   ┌──────────────────────────────────────────┐   captions   ┌──────────────────┐
- │ QR code + code   │ ────────────▶ │ Room "KGUF"                               │ ───────────▶ │ English (small)  │
+ │ QR code + code   │ ────────────▶ │ Room "482"                                 │ ───────────▶ │ English (small)  │
  │ Start/Stop mic   │               │  Engine A: OpenAI live interpreter        │   voice      │ Español (big)    │
  │ When voice speaks│ ◀──────────── │  Engine B: speech→Claude→voice + glossary │ ───────────▶ │ 🔊  A−  A+       │
  │ Live monitor     │  English      │  Replies: Spanish → English, to host      │ ◀─────────── │ Hold to reply 🎤 │
  └──────────────────┘  replies      └──────────────────────────────────────────┘   replies    └──────────────────┘
 ```
 
-- **Joining** works like Kahoot: scan the QR code or go to the site and type a 4-letter code. No app, no account. It works the same on iPhone and Android because it's a web page (it can be added to the home screen as an app).
+- **Joining** works like Kahoot: scan the QR code or go to the site and type a 3-digit code. No app, no account. It works the same on iPhone and Android because it's a web page (it can be added to the home screen as an app).
 - **API keys stay on the server.** Phones never see them.
 
 ### Two engines, chosen per meeting
@@ -57,7 +57,7 @@ Mostly no. One product is close, and you should know about it.
 
 ## The experience
 
-**You (host).** Open `/host` on a laptop or phone and tap Start session. A big QR code and room code appear. Tap 🎙 Start translating and talk. Your screen shows what you said and what they're hearing, so you can catch a bad translation live. When someone replies, you see "Juan is replying…" and hear English in your earbuds. At the end, download the bilingual transcript.
+**You (host).** Open `/host` on a laptop or phone and tap Start session. A big QR code and room code appear. Tap 🎙 Start translating and talk. Your screen shows what you said and what they're hearing, so you can catch a bad translation live. When someone replies, you see "Pedro is replying…" and hear English in your earbuds. At the end, download the bilingual transcript.
 
 **Crew member.** Plug in earbuds, scan the QR code, and tap "🎧 Entrar con voz". English appears small on top and Spanish large on the bottom, with the voice in their ears. They can make the text bigger, mute the voice, or join text-only. To ask a question, they hold "🎤 Mantén presionado para responder", speak Spanish, and release. Everyone sees the question in both languages, labeled with their name.
 

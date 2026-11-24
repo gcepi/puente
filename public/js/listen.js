@@ -4,8 +4,8 @@ import { PcmPlayer } from './player.js';
 const player = new PcmPlayer();
 window.__puente = { player }; // for tests and on-device debugging
 
-const pathCode = location.pathname.match(/^\/j\/([A-Za-z]{4})$/)?.[1];
-if (pathCode) $('#code').value = pathCode.toUpperCase();
+const pathCode = location.pathname.match(/^\/j\/(\d{3})$/)?.[1];
+if (pathCode) $('#code').value = pathCode;
 try {
   $('#name').value = localStorage.getItem('puente.name') || '';
 } catch {}
@@ -21,10 +21,10 @@ const applySize = () => {
 applySize();
 
 async function join(withAudio) {
-  const code = $('#code').value.trim().toUpperCase();
+  const code = $('#code').value.replace(/\D/g, '');
   const name = $('#name').value.trim();
   $('#joinErr').textContent = '';
-  if (!/^[A-Z]{4}$/.test(code)) return ($('#joinErr').textContent = 'El código tiene 4 letras.');
+  if (!/^\d{3}$/.test(code)) return ($('#joinErr').textContent = 'El código tiene 3 números.');
   // Unlock audio first, while we are still inside the tap.
   if (withAudio) await player.unlock().catch(() => {});
   const r = await fetch(`/api/rooms/${code}`).catch(() => null);

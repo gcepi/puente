@@ -45,7 +45,7 @@ try {
   host.on('pageerror', (e) => fail(`host page error: ${e.message}`));
   await host.goto(`${BASE}/host`);
   await host.click('button[type=submit]');
-  await host.waitForSelector('#roomCode:not(:text("----"))');
+  await host.waitForSelector('#roomCode:not(:text("---"))');
   const code = (await host.textContent('#roomCode')).trim();
   console.log(`room ${code}`);
 
@@ -56,14 +56,14 @@ try {
   l1.on('pageerror', (e) => fail(`listener page error: ${e.message}`));
   await l1.goto(`${BASE}/j/${code}`);
   await l1.screenshot({ path: path.join(shots, 'listener-join.png') });
-  await l1.fill('#name', 'Juan');
+  await l1.fill('#name', 'Pedro');
   await l1.click('#joinAudio');
   await l1.waitForSelector('#live:not(.hidden)');
 
   const l2Ctx = await browser.newContext({ ...phone });
   const l2 = await l2Ctx.newPage();
   await l2.goto(BASE);
-  await l2.fill('#code', code.toLowerCase());
+  await l2.fill('#code', code);
   await l2.click('#joinText');
   await l2.waitForSelector('#live:not(.hidden)');
 
@@ -107,14 +107,14 @@ try {
   const tb = await (await l1.$('#talkBtn')).boundingBox();
   await l1.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
   await l1.mouse.down();
-  await host.waitForSelector('#who:text("Juan is replying")', { timeout: 5000 });
+  await host.waitForSelector('#who:text("Pedro is replying")', { timeout: 5000 });
   const l2Talk = await l2.$('#talkBtn');
   if (l2Talk && (await l2Talk.isVisible()) && !(await l2Talk.isDisabled())) fail('second listener could talk over the first');
   await l1.waitForTimeout(3600);
   await l1.mouse.up();
   await host.waitForFunction(() => [...document.querySelectorAll('#enPane .line')].some((l) => l.textContent.includes('What time do you need 204')), null, { timeout: 8000 });
   const replyRow = await host.$$eval('#esPane .line', (n) => n.map((x) => x.textContent).find((t) => t.includes('¿A qué hora')));
-  if (!replyRow?.startsWith('Juan')) fail(`reply not labeled with speaker: ${replyRow}`);
+  if (!replyRow?.startsWith('Pedro')) fail(`reply not labeled with speaker: ${replyRow}`);
   await host.waitForTimeout(1200);
   const hostVoice = await host.evaluate(() => window.__puente.player.stats);
   console.log('host heard reply:', hostVoice);
@@ -129,7 +129,7 @@ try {
   const href = await host.getAttribute('#transcriptBtn', 'href');
   const md = await (await fetch(`${BASE}${href}`)).text();
   if (!md.includes('**ES:** Buenos días')) fail('transcript missing Spanish');
-  if (!md.includes('**Juan (ES):**')) fail('transcript missing reply');
+  if (!md.includes('**Pedro (ES):**')) fail('transcript missing reply');
   console.log(md.split('\n').slice(0, 12).join('\n'));
 
   // A late joiner sees recent history.

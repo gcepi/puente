@@ -81,7 +81,7 @@ const server = http.createServer(async (req, res) => {
 
   if (p === '/api/rooms' && req.method === 'POST') {
     const body = await readBody(req);
-    if (config.hostPasscode && !safeEqual(body.passcode ?? '', config.hostPasscode)) {
+    if (config.hostPasscode && !safeEqual(String(body.passcode ?? '').trim(), config.hostPasscode)) {
       return json(res, 401, { error: 'Wrong passcode' });
     }
     const engine = ENGINES.includes(body.engine) ? body.engine : config.engine;
@@ -91,7 +91,7 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { code: room.code, hostToken: room.hostToken, joinUrl, qrSvg, engine });
   }
 
-  const tm = p.match(/^\/api\/rooms\/([A-Za-z]{4})\/transcript$/);
+  const tm = p.match(/^\/api\/rooms\/(\d{3})\/transcript$/);
   if (tm) {
     const room = getRoom(tm[1]);
     if (!room || !safeEqual(url.searchParams.get('token') ?? '', room.hostToken)) return json(res, 404, { error: 'Not found' });
@@ -102,13 +102,13 @@ const server = http.createServer(async (req, res) => {
     return res.end(room.transcriptMarkdown());
   }
 
-  const rm = p.match(/^\/api\/rooms\/([A-Za-z]{4})$/);
+  const rm = p.match(/^\/api\/rooms\/(\d{3})$/);
   if (rm) {
     const room = getRoom(rm[1]);
     return room && !room.ended ? json(res, 200, { code: room.code }) : json(res, 404, { error: 'No such session' });
   }
 
-  if (p === '/' || /^\/j\/[A-Za-z]{4}$/.test(p)) return serveStatic(req, res, 'listen.html');
+  if (p === '/' || /^\/j\/\d{3}$/.test(p)) return serveStatic(req, res, 'listen.html');
   if (p === '/host') return serveStatic(req, res, 'host.html');
   return serveStatic(req, res, p.slice(1));
 });

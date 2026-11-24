@@ -61,9 +61,15 @@ async function setup() {
     const r = await fetch('/api/rooms', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ engine: sel.value, passcode: $('#passcode').value }),
+      body: JSON.stringify({ engine: sel.value, passcode: $('#passcode').value.trim() }),
     });
     const body = await r.json();
+    if (r.status === 401) {
+      store.set('puente.pass', '', true);
+      $('#passcode').value = '';
+      $('#passcode').focus();
+      return ($('#setupErr').textContent = 'Wrong passcode. Enter the HOST_PASSCODE set in Render.');
+    }
     if (!r.ok) return ($('#setupErr').textContent = body.error || 'Could not start');
     store.set('puente.pass', $('#passcode').value, true);
     store.set('puente.engine', sel.value, true);

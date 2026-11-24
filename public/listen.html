@@ -16,10 +16,10 @@
       <h1 class="brand">Pu<span>e</span>nte</h1>
       <p class="sub">Traducción en vivo · Live translation</p>
       <label>Código de la junta
-        <input id="code" class="code" maxlength="4" inputmode="text" autocapitalize="characters" required placeholder="ABCD" />
+        <input id="code" class="code" maxlength="3" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required placeholder="123" />
       </label>
       <label>Tu nombre (opcional)
-        <input id="name" maxlength="40" placeholder="Ej. Juan" />
+        <input id="name" maxlength="40" placeholder="Ej. Pedro" />
       </label>
       <button class="btn" id="joinAudio" type="submit">🎧 Entrar con voz</button>
       <button class="btn secondary" id="joinText" type="button">Solo texto</button>

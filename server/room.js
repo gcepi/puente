@@ -7,11 +7,11 @@ import { config, engineProblems } from './config.js';
 import { createEngine } from './engines/index.js';
 
 const rooms = new Map();
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O
-
+// Room codes are 3 digits (100-999): easy to say out loud and type on a number pad.
 function newCode() {
+  if (rooms.size >= 900) throw new Error('No free room codes');
   for (;;) {
-    const code = Array.from({ length: 4 }, () => ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');
+    const code = String(crypto.randomInt(100, 1000));
     if (!rooms.has(code)) return code;
   }
 }
@@ -22,7 +22,7 @@ export function createRoom(engineName = config.engine) {
   return room;
 }
 
-export const getRoom = (code) => rooms.get(String(code || '').toUpperCase());
+export const getRoom = (code) => rooms.get(String(code || '').trim());
 
 const send = (ws, obj) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify(obj));
 
