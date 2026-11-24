@@ -1,0 +1,15 @@
+{
+  "id": "/solo",
+  "name": "Puente Solo",
+  "short_name": "Puente Solo",
+  "start_url": "/solo",
+  "scope": "/solo",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#093153",
+  "icons": [
+    { "src": "/solo-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/solo-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/solo-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

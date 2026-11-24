@@ -142,7 +142,7 @@ input.code { text-transform: uppercase; letter-spacing: 0.35em; font-size: 28px;
 /* Host on a laptop or a cast screen: controls on the left, captions fill the rest edge to edge. */
 @media (min-width: 860px) {
   .host.on { grid-template-columns: 290px minmax(0, 1fr); height: 100vh; align-items: stretch; }
-  .host.on .panel { overflow-y: auto; align-content: start; }
+  .host.on .panel { overflow-y: auto; align-content: start; grid-auto-rows: max-content; }
   .host.on .monitor { height: auto; min-height: 0; grid-template-columns: minmax(0, 1fr) 2px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .monitor > .divider { width: 2px; height: auto; }
   .monitor .pane { padding: 8px 28px 20px; }

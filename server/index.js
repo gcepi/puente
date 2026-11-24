@@ -9,9 +9,12 @@ import { config, engineProblems } from './config.js';
 import { createRoom, getRoom } from './room.js';
 import { ENGINES, voiceName } from './engines/index.js';
 import { pcmToWav } from './providers/openai.js';
+import { attachSolo } from './solo.js';
+import { createSoloAccess } from './solo-access.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(here, '..', 'public');
+const soloAccess = createSoloAccess(config);
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -35,11 +38,16 @@ function json(res, status, body) {
 
 function readBody(req) {
   return new Promise((resolve) => {
-    let data = '';
-    req.on('data', (c) => (data += c.length < 10_000 ? c : ''));
+    const chunks = [];
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size <= 10_000) chunks.push(chunk);
+    });
     req.on('end', () => {
+      if (size > 10_000) return resolve({});
       try {
-        resolve(JSON.parse(data || '{}'));
+        resolve(JSON.parse(Buffer.concat(chunks).toString()) ?? {});
       } catch {
         resolve({});
       }
@@ -47,9 +55,8 @@ function readBody(req) {
   });
 }
 
-function origin(req) {
-  if (config.publicUrl) return config.publicUrl.replace(/\/$/, '');
-  const proto = req.headers['x-forwarded-proto'] || 'http';
+function requestOrigin(req) {
+  const proto = req.headers['x-forwarded-proto']?.split(',')[0].trim() || (req.socket.encrypted ? 'https' : 'http');
   return `${proto}://${req.headers.host}`;
 }
 
@@ -72,6 +79,20 @@ const server = http.createServer(async (req, res) => {
 
   if (p === '/healthz') return json(res, 200, { ok: true });
 
+  if (p === '/api/solo/access') {
+    if (req.method === 'POST') {
+      if (!soloAccess.available) return json(res, 503, { error: 'One-on-one translation is unavailable.' });
+      const body = await readBody(req);
+      if (!safeEqual(String(body.passcode ?? '').trim(), config.hostPasscode)) {
+        return json(res, 401, { error: 'Incorrect host passcode.' });
+      }
+      res.setHeader('set-cookie', soloAccess.grant(requestOrigin(req).startsWith('https://')));
+      return json(res, 200, { available: true, authorized: true });
+    }
+    if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
+    return json(res, 200, { available: soloAccess.available, authorized: soloAccess.authorized(req.headers.cookie) });
+  }
+
   if (p === '/api/config' && req.method === 'GET') {
     return json(res, 200, {
       engine: config.engine,
@@ -88,8 +109,10 @@ const server = http.createServer(async (req, res) => {
     }
     const engine = ENGINES.includes(body.engine) ? body.engine : config.engine;
     const room = createRoom(engine);
-    const joinUrl = `${origin(req)}/j/${room.code}`;
+    const joinBase = config.publicUrl ? config.publicUrl.replace(/\/$/, '') : requestOrigin(req);
+    const joinUrl = `${joinBase}/j/${room.code}`;
     const qrSvg = await QRCode.toString(joinUrl, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+    if (soloAccess.available) res.setHeader('set-cookie', soloAccess.grant(requestOrigin(req).startsWith('https://')));
     return json(res, 200, { code: room.code, hostToken: room.hostToken, joinUrl, qrSvg, engine: room.engineName });
   }
 
@@ -123,16 +146,23 @@ const server = http.createServer(async (req, res) => {
 
   if (p === '/' || /^\/j\/\d{3}$/.test(p)) return serveStatic(req, res, 'listen.html');
   if (p === '/host') return serveStatic(req, res, 'host.html');
+  if (p === '/solo' || p === '/solo/') return serveStatic(req, res, 'solo.html');
   return serveStatic(req, res, p.slice(1));
 });
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 256 * 1024 });
 wss.on('connection', (ws, req) => {
   const q = new URL(req.url, 'http://x').searchParams;
-  const room = getRoom(q.get('room'));
-  if (!room || room.ended) return ws.close(4004, 'No such session');
   ws.isAlive = true;
   ws.on('pong', () => (ws.isAlive = true));
+  if (q.get('role') === 'solo') {
+    if (!soloAccess.authorized(req.headers.cookie) || (req.headers.origin && req.headers.origin !== requestOrigin(req))) {
+      return ws.close(4003, 'Host access required');
+    }
+    return attachSolo(ws);
+  }
+  const room = getRoom(q.get('room'));
+  if (!room || room.ended) return ws.close(4004, 'No such session');
   if (q.get('role') === 'host') {
     if (!safeEqual(q.get('token') ?? '', room.hostToken)) return ws.close(4003, 'Not the host');
     room.attachHost(ws);

@@ -4,6 +4,8 @@ Live English → Mexican Spanish translation for in-person meetings. The speaker
 
 Works on iPhone and Android as a web page. No app, no accounts for listeners.
 
+For a one-on-one conversation, open **One-on-one on this phone** on the host setup page, or open `/solo`. Both people take turns on one phone. The owner enters the host passcode on first use. Translation requires internet. Both AirPods play the same translated audio. You can also use the speaker. [Add Puente Solo to your Home Screen](docs/SETUP.md#one-on-one-on-a-phone)
+
 - **Why and how, holes, cost, timeline:** [docs/SCOPE.md](docs/SCOPE.md)
 - **Go live in about an hour, no command line:** [docs/SETUP.md](docs/SETUP.md)
 
