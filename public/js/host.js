@@ -125,6 +125,8 @@ function run(s) {
         if (m.t === 'cap') {
           if (m.text !== '…') $('#hostErr').textContent = '';
           (m.lang === 'en' ? en : es).set(m.id, m.text, m.final, m.who);
+        } else if (m.t === 'cuelen') {
+          reveal[m.lang]?.setLength(m.id, m.seconds);
         } else if (m.t === 'cue') {
           if (m.text) $('#hostErr').textContent = '';
           // Replies play on this screen, so they sync to its audio; the briefing is paced to match the phones.
@@ -232,8 +234,8 @@ function run(s) {
     paint();
     stopLive();
     // Keep the last syllable: send a beat of audio after release.
-    tailUntil = Date.now() + 350;
-    setTimeout(() => conn.send({ t: 'ptt', down: false }), 350);
+    tailUntil = Date.now() + 250;
+    setTimeout(() => conn.send({ t: 'ptt', down: false }), 250);
   }
   pb.addEventListener('pointerdown', (e) => {
     e.preventDefault();

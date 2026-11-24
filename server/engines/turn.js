@@ -63,22 +63,46 @@ export class SentenceSplitter {
   }
 }
 
+// While the button is held, a pause this long after enough speech closes a segment,
+// which is transcribed in the background. On release only the last segment is left.
+const SEGMENT_PAUSE_SECONDS = 0.7;
+const SEGMENT_MIN_VOICED_SECONDS = 1.5;
+
+function bufRms(buf) {
+  let sum = 0;
+  const n = buf.length >> 1;
+  for (let i = 0; i < n; i++) {
+    const s = buf.readInt16LE(i * 2) / 32768;
+    sum += s * s;
+  }
+  return n ? Math.sqrt(sum / n) : 0;
+}
+
 export class TurnEngine {
   /**
-   * @param {{caption:Function, audio:Function, error:Function}} hooks
+   * @param {{caption:Function, cue:Function, cueLength?:Function, audio:Function, error:Function}} hooks
    * @param {{transcribe:Function, translate:Function, speak:Function}} deps
-   * @param {{src?:string, dst?:string}} opts
+   * @param {{src?:string, dst?:string, speed?:number}} opts
    */
-  constructor(hooks, deps, { src = 'en', dst = 'es' } = {}) {
+  constructor(hooks, deps, { src = 'en', dst = 'es', speed = 1 } = {}) {
     this.hooks = hooks;
     this.deps = deps;
     this.src = src;
     this.dst = dst;
-    this.chunks = [];
-    this.bytes = 0;
+    this.charsPerSecond = 15 * speed; // only for the first guess at a sentence's length
     this.seq = 0;
     this.context = [];
     this.chain = Promise.resolve();
+    this.reset();
+  }
+
+  reset() {
+    this.chunks = []; // audio of the open segment
+    this.segments = []; // transcriptions already running for earlier segments of this turn
+    this.bytes = 0; // whole turn
+    this.voiced = 0; // seconds of voice in the open segment
+    this.quiet = 0; // seconds of quiet at the end of the open segment
+    this.turnVoiced = 0;
   }
 
   setMode() {}
@@ -93,15 +117,45 @@ export class TurnEngine {
     if (this.bytes > MAX_SECONDS * RATE * 2) return;
     this.chunks.push(buf);
     this.bytes += buf.length;
+    const secs = buf.length / 2 / RATE;
+    if (bufRms(buf) > VOICE_RMS) {
+      this.voiced += secs;
+      this.turnVoiced += secs;
+      this.quiet = 0;
+    } else {
+      this.quiet += secs;
+    }
+    // A natural pause after real speech: start transcribing this part now.
+    if (this.voiced >= SEGMENT_MIN_VOICED_SECONDS && this.quiet >= SEGMENT_PAUSE_SECONDS) this.closeSegment();
+  }
+
+  closeSegment() {
+    const pcm = Buffer.concat(this.chunks);
+    this.chunks = [];
+    this.voiced = 0;
+    this.quiet = 0;
+    const job = this.deps.transcribe(pcm, this.src).then(
+      (text) => ({ text }),
+      (error) => ({ error })
+    );
+    this.segments.push(job);
   }
 
   /** The speaker released the button: process this turn. */
   flush() {
-    const pcm = Buffer.concat(this.chunks);
-    this.chunks = [];
-    this.bytes = 0;
-    if (!pcm.length) return;
-    if (pcm.length < MIN_SECONDS * RATE * 2 || voicedSeconds(pcm) < MIN_VOICED_SECONDS) {
+    const rest = Buffer.concat(this.chunks);
+    // After earlier segments, a short closing phrase ("okay, thanks") still counts.
+    const restHasSpeech = this.segments.length
+      ? voicedSeconds(rest) >= 0.15
+      : rest.length >= MIN_SECONDS * RATE * 2 && voicedSeconds(rest) >= MIN_VOICED_SECONDS;
+    const parts = [...this.segments];
+    if (restHasSpeech) {
+      parts.push(this.deps.transcribe(rest, this.src).then((text) => ({ text }), (error) => ({ error })));
+    }
+    const hadAudio = this.bytes > 0;
+    this.reset();
+    if (!hadAudio) return;
+    if (!parts.length) {
       this.hooks.caption({ lang: this.src, id: this.peekId(), text: '', final: true }); // clear any live text
       this.hooks.error("Didn't catch any speech. Hold the button the whole time you talk.");
       return;
@@ -109,24 +163,24 @@ export class TurnEngine {
     const id = `t${this.seq++}`;
     this.hooks.caption({ lang: this.src, id, text: '…', final: false });
     // Turns are handled strictly in order, so voices never overlap.
-    this.chain = this.chain.then(() => this.process(id, pcm)).catch((e) => this.hooks.error(e.message));
+    this.chain = this.chain.then(() => this.process(id, parts)).catch((e) => this.hooks.error(e.message));
   }
 
-  async process(id, pcm) {
-    let text;
-    try {
-      text = await this.deps.transcribe(pcm, this.src);
-    } catch (e) {
+  async process(id, parts) {
+    const results = await Promise.all(parts);
+    const failed = results.find((r) => r.error);
+    if (failed) {
       this.hooks.caption({ lang: this.src, id, text: '(no se pudo escuchar / could not transcribe)', final: true });
-      throw e;
+      throw failed.error;
     }
+    const text = results.map((r) => r.text.trim()).filter(Boolean).join(' ');
     if (!text) {
       this.hooks.caption({ lang: this.src, id, text: '(nothing heard)', final: true });
       return;
     }
     this.hooks.caption({ lang: this.src, id, text, final: true });
 
-    // Translate as a stream; each finished sentence is voiced right away, in order.
+    // Translate the whole turn as a stream; each finished sentence is voiced right away, in order.
     let speech = Promise.resolve();
     const splitter = new SentenceSplitter((sentence) => {
       speech = speech.then(() => this.say(id, sentence));
@@ -147,22 +201,30 @@ export class TurnEngine {
   }
 
   /**
-   * Voice one sentence. Its text goes out just before its audio, with the exact audio
-   * length, so phones can reveal the words in step with the voice.
+   * Voice one sentence, streaming its audio as it is generated. Its text goes out just
+   * before the first audio with an estimated length; the exact length follows when the
+   * sentence is done, so phones keep the word-by-word reveal in step with the voice.
    */
   async say(id, sentence) {
-    const chunks = [];
+    let bytes = 0;
+    const started = () => bytes > 0;
     try {
-      await this.deps.speak(sentence, (b) => chunks.push(b));
+      await this.deps.speak(sentence, (b) => {
+        if (!started()) {
+          this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: sentence.length / this.charsPerSecond, last: false });
+        }
+        bytes += b.length;
+        this.hooks.audio(b);
+      });
     } catch (e) {
-      // Still show the words if the voice fails.
-      this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: 0, last: false });
       this.hooks.error(`Voice: ${e.message}`);
+    }
+    if (!started()) {
+      // No audio at all: still show the words.
+      this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: 0, last: false });
       return;
     }
-    const audio = Buffer.concat(chunks);
-    this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: audio.length / 2 / RATE, last: false });
-    for (let o = 0; o < audio.length; o += 9600) this.hooks.audio(audio.subarray(o, o + 9600));
+    this.hooks.cueLength?.({ id, lang: this.dst, seconds: bytes / 2 / RATE });
   }
 
   async stop() {

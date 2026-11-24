@@ -122,6 +122,7 @@ class Room {
     this.engine = createEngine(this.engineName, {
       caption: (c) => this.onCaption(c),
       cue: (c) => this.onCue(c, undefined, 'listeners'),
+      cueLength: (c) => this.broadcast({ t: 'cuelen', ...c, to: 'listeners' }),
       audio: (buf) => this.onAudio(buf),
       error: (message) => {
         console.error(`[${this.code}] ${message}`);
@@ -196,6 +197,7 @@ class Room {
       {
         caption: (c) => this.onCaption({ ...c, id: tag + c.id }, name),
         cue: (c) => this.onCue({ ...c, id: tag + c.id }, name, 'host'),
+        cueLength: (c) => this.broadcast({ t: 'cuelen', ...c, id: tag + c.id, to: 'host' }),
         audio: (buf) => {
           // Replies are spoken to the host only.
           this.replyAudioUntil = Math.max(this.replyAudioUntil, Date.now()) + (buf.length / 2 / config.sampleRate) * 1000 + 300;

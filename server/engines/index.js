@@ -37,9 +37,9 @@ export function createEngine(name, hooks, direction = 'en-es') {
                 speed: config.ttsSpeed,
                 language: dst,
               })
-            : createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst }),
+            : createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst, speed: config.ttsSpeed }),
       },
-      { src, dst }
+      { src, dst, speed: config.ttsSpeed }
     );
   }
   if (name === 'openai-translate') {

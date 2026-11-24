@@ -17,6 +17,7 @@ function harness({ translation = (t) => `Hola. ${t}. Adiós.`, speakMs = 0 } = {
     {
       caption: (c) => out.captions.push(c),
       cue: (c) => (out.cues.push(c), out.events.push(`cue:${c.text}`)),
+      cueLength: (c) => out.events.push(`len:${c.seconds}`),
       audio: (b) => out.events.push(`audio:${b.length}`),
       error: (e) => out.errors.push(e),
     },
@@ -47,9 +48,9 @@ test('nothing happens while held; on release: transcript, then each sentence voi
   assert.deepEqual(out.captions.filter((c) => c.final).map((c) => c.text), ['said 1']);
   assert.deepEqual(out.cues.map((c) => c.text), ['Hola.', 'said 1.', 'Adiós.', '']);
   assert.ok(out.cues.at(-1).last, 'an end marker closes the line');
-  assert.ok(out.cues.slice(0, 3).every((c) => c.seconds === 1), 'each cue carries its audio length');
-  // Every sentence's text is sent just before its own audio.
-  assert.deepEqual(out.events.slice(0, 4), ['cue:Hola.', 'audio:9600', 'audio:9600', 'audio:9600']);
+  assert.ok(out.cues.slice(0, 3).every((c) => c.seconds > 0), 'each cue carries an estimated length');
+  // Each sentence: text just before its audio streams, then its exact length.
+  assert.deepEqual(out.events.slice(0, 3), ['cue:Hola.', 'audio:48000', 'len:1']);
 });
 
 test('the first sentence is voiced before the translation has finished', async () => {
@@ -102,6 +103,34 @@ test('turns stay in order and carry context', async () => {
   const ends = out.cues.map((c, i) => (c.last ? i : -1)).filter((i) => i >= 0);
   assert.equal(ends.length, 2);
   assert.ok(out.cues.slice(0, ends[0]).every((c) => c.id === 't0'));
+});
+
+test('long turns are transcribed in pieces while the button is still held', async () => {
+  const { engine, out } = harness();
+  const feed = (seconds, amp) => {
+    const b = tone(seconds, amp);
+    for (let o = 0; o < b.length; o += 1920) engine.audio(b.subarray(o, o + 1920)); // 40 ms frames like the browser
+  };
+  feed(2, 0.2); // speech
+  feed(0.8, 0.001); // a natural pause
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(out.calls, ['stt:en'], 'first part is already being transcribed');
+  feed(0.6, 0.2); // a short closing phrase
+  engine.flush();
+  await engine.chain;
+  assert.equal(out.calls.filter((c) => c.startsWith('stt')).length, 2, 'only the last part waits for release');
+  assert.equal(out.captions.find((c) => c.final).text, 'said 1 said 2', 'both parts joined in order');
+});
+
+test('a trailing pause after the last segment is not sent again', async () => {
+  const { engine, out } = harness();
+  for (const [secs, amp] of [[2, 0.2], [1, 0.001]]) {
+    const b = tone(secs, amp);
+    for (let o = 0; o < b.length; o += 1920) engine.audio(b.subarray(o, o + 1920));
+  }
+  engine.flush();
+  await engine.chain;
+  assert.equal(out.calls.filter((c) => c.startsWith('stt')).length, 1);
 });
 
 test('peekId names the line the next turn will use', () => {

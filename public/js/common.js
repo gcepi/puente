@@ -131,10 +131,20 @@ export class Revealer {
     const start = startIn == null ? Math.max(now + this.leadIn, this.clock) : now + startIn;
     if (startIn == null) this.clock = start + dur;
     if (!this.lines.has(id)) this.lines.set(id, '');
-    this.items.push({ id, text, start, dur, last, who });
+    const item = { id, text, start, dur, last, who, synced: startIn != null };
+    this.items.push(item);
+    if (text) this.latest = item;
     this.tick();
     if (!this.timer) this.timer = setInterval(() => this.tick(), 80);
   }
+  /** The exact audio length of the newest sentence, once it has been fully voiced. */
+  setLength(id, seconds) {
+    const it = this.latest;
+    if (!it || it.id !== id || !(seconds > 0)) return;
+    it.dur = seconds;
+    if (!it.synced) this.clock = it.start + seconds;
+  }
+
   tick() {
     const now = performance.now() / 1000;
     const keep = [];

@@ -66,6 +66,8 @@ function start(code, name, withAudio) {
         if (m.t === 'cap') {
           $(m.lang === 'en' ? '#enEmpty' : '#esEmpty')?.remove();
           (m.lang === 'en' ? en : es).set(m.id, m.text, m.final, m.who);
+        } else if (m.t === 'cuelen') {
+          reveal[m.lang]?.setLength(m.id, m.seconds);
         } else if (m.t === 'cue') {
           $(m.lang === 'en' ? '#enEmpty' : '#esEmpty')?.remove();
           // Synced to this phone's audio clock when it plays this voice; paced otherwise.

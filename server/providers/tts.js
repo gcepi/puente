@@ -31,7 +31,7 @@ export function createElevenLabsTts({ apiKey, voiceId, model, speed, language = 
         text,
         model_id: model,
         language_code: language,
-        voice_settings: { stability: 0.5, similarity_boost: 0.75, speed },
+        voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: Math.min(1.2, Math.max(0.7, speed)) },
       }),
     });
     await streamPcm(res, onAudio, 'ElevenLabs');
@@ -43,7 +43,7 @@ const OPENAI_STYLE = {
   en: 'Speak clear, natural American English at a brisk, friendly pace.',
 };
 
-export function createOpenAiTts({ apiKey, model, voice, language = 'es' }) {
+export function createOpenAiTts({ apiKey, model, voice, language = 'es', speed = 1 }) {
   return async function speak(text, onAudio) {
     const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
@@ -53,8 +53,8 @@ export function createOpenAiTts({ apiKey, model, voice, language = 'es' }) {
         voice,
         input: text,
         response_format: 'pcm',
-        // Only the gpt-* speech models take style instructions.
-        ...(model.startsWith('gpt-') ? { instructions: OPENAI_STYLE[language] ?? OPENAI_STYLE.es } : {}),
+        // gpt-* speech models take style instructions; tts-1 models take a speaking speed.
+        ...(model.startsWith('gpt-') ? { instructions: OPENAI_STYLE[language] ?? OPENAI_STYLE.es } : { speed }),
       }),
     });
     await streamPcm(res, onAudio, 'OpenAI');
