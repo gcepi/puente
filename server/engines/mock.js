@@ -82,18 +82,13 @@ export class MockEngine {
     this.hooks.caption({ lang: this.src, id, text: heard, final: true });
     const t = translated.split(' ');
     const target = full ? translated : `${t.slice(0, Math.ceil(t.length / 2)).join(' ')}…`;
-    // Type the translation out like a streaming model, then "speak" it.
-    const tokens = target.split(' ');
-    tokens.forEach((_, i) =>
-      setTimeout(() => {
-        const final = i === tokens.length - 1;
-        this.hooks.caption({ lang: this.dst, id, text: tokens.slice(0, i + 1).join(' '), final });
-        if (final) {
-          const pcm = synthVoice(target);
-          for (let o = 0; o < pcm.length; o += 4800) this.hooks.audio(pcm.subarray(o, o + 4800));
-        }
-      }, 300 + i * 45)
-    );
+    // Like the real engine: one cue per sentence with its audio length, then the audio, then an end marker.
+    setTimeout(() => {
+      const pcm = synthVoice(target);
+      this.hooks.cue?.({ id, lang: this.dst, text: target, seconds: pcm.length / 2 / RATE, last: false });
+      for (let o = 0; o < pcm.length; o += 4800) this.hooks.audio(pcm.subarray(o, o + 4800));
+      this.hooks.cue?.({ id, lang: this.dst, text: '', seconds: 0, last: true });
+    }, 300);
   }
   async stop() {
     clearInterval(this.timer);

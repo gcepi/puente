@@ -24,6 +24,45 @@ export function voicedSeconds(pcm) {
   return (voiced * FRAME) / RATE;
 }
 
+/**
+ * Cuts streamed text into sentences. A sentence is emitted once the next one
+ * starts (so "3.5" or a trailing period mid-stream never splits early).
+ */
+export class SentenceSplitter {
+  constructor(onSentence, maxLen = 240) {
+    this.onSentence = onSentence;
+    this.maxLen = maxLen;
+    this.buf = '';
+    this.streamed = false;
+  }
+  push(delta) {
+    this.streamed = true;
+    this.buf += delta;
+    let m;
+    while ((m = this.buf.match(/^([\s\S]*?[.!?…]+["»”')\]]*)\s+(?=\S)/))) {
+      this.emit(m[1]);
+      this.buf = this.buf.slice(m[0].length);
+    }
+    if (this.buf.length > this.maxLen) {
+      const cut = Math.max(this.buf.lastIndexOf(', '), this.buf.lastIndexOf('; '));
+      if (cut > 40) {
+        this.emit(this.buf.slice(0, cut + 1));
+        this.buf = this.buf.slice(cut + 2);
+      }
+    }
+  }
+  /** @param {string} full the complete text, used when nothing was streamed */
+  end(full) {
+    if (!this.streamed && full) this.buf = full;
+    this.emit(this.buf);
+    this.buf = '';
+  }
+  emit(text) {
+    const s = text.trim();
+    if (s) this.onSentence(s);
+  }
+}
+
 export class TurnEngine {
   /**
    * @param {{caption:Function, audio:Function, error:Function}} hooks
@@ -45,6 +84,11 @@ export class TurnEngine {
   setMode() {}
   start() {}
 
+  /** Id the next turn will get, so live captions shown while holding land on the same line. */
+  peekId() {
+    return `t${this.seq}`;
+  }
+
   audio(buf) {
     if (this.bytes > MAX_SECONDS * RATE * 2) return;
     this.chunks.push(buf);
@@ -58,6 +102,7 @@ export class TurnEngine {
     this.bytes = 0;
     if (!pcm.length) return;
     if (pcm.length < MIN_SECONDS * RATE * 2 || voicedSeconds(pcm) < MIN_VOICED_SECONDS) {
+      this.hooks.caption({ lang: this.src, id: this.peekId(), text: '', final: true }); // clear any live text
       this.hooks.error("Didn't catch any speech. Hold the button the whole time you talk.");
       return;
     }
@@ -80,19 +125,44 @@ export class TurnEngine {
       return;
     }
     this.hooks.caption({ lang: this.src, id, text, final: true });
+
+    // Translate as a stream; each finished sentence is voiced right away, in order.
+    let speech = Promise.resolve();
+    const splitter = new SentenceSplitter((sentence) => {
+      speech = speech.then(() => this.say(id, sentence));
+    });
     let out;
     try {
-      out = await this.deps.translate(text, this.context.slice(-4), (d) =>
-        this.hooks.caption({ lang: this.dst, id, text: d, final: false })
-      );
+      out = await this.deps.translate(text, this.context.slice(-4), (d) => splitter.push(d));
     } catch (e) {
       const label = this.dst === 'es' ? '(sin traducción)' : '(no translation)';
-      this.hooks.caption({ lang: this.dst, id, text: `${label} ${text}`, final: true });
+      await speech;
+      this.hooks.cue({ id, lang: this.dst, text: `${label} ${text}`, seconds: 0, last: true });
       throw e;
     }
+    splitter.end(out);
+    await speech;
+    this.hooks.cue({ id, lang: this.dst, text: '', seconds: 0, last: true });
     this.context.push({ src: text, dst: out });
-    this.hooks.caption({ lang: this.dst, id, text: out, final: true });
-    await this.deps.speak(out, (buf) => this.hooks.audio(buf));
+  }
+
+  /**
+   * Voice one sentence. Its text goes out just before its audio, with the exact audio
+   * length, so phones can reveal the words in step with the voice.
+   */
+  async say(id, sentence) {
+    const chunks = [];
+    try {
+      await this.deps.speak(sentence, (b) => chunks.push(b));
+    } catch (e) {
+      // Still show the words if the voice fails.
+      this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: 0, last: false });
+      this.hooks.error(`Voice: ${e.message}`);
+      return;
+    }
+    const audio = Buffer.concat(chunks);
+    this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: audio.length / 2 / RATE, last: false });
+    for (let o = 0; o < audio.length; o += 9600) this.hooks.audio(audio.subarray(o, o + 9600));
   }
 
   async stop() {

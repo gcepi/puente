@@ -58,15 +58,34 @@ export function createOpenAiTranslator({ apiKey, model, glossary, direction }) {
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         model,
+        stream: true,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: `${ctx}<speech>${text}</speech>` },
         ],
       }),
     });
-    const json = await check(res, 'OpenAI translation');
-    const out = (json.choices?.[0]?.message?.content ?? '').trim();
-    onDelta?.(out);
-    return out;
+    if (!res.ok) await check(res, 'OpenAI translation');
+    // Server-sent events: lines of "data: {json}", ending with "data: [DONE]".
+    let out = '';
+    let pending = '';
+    const decoder = new TextDecoder();
+    for await (const chunk of res.body) {
+      pending += decoder.decode(chunk, { stream: true });
+      const lines = pending.split('\n');
+      pending = lines.pop();
+      for (const line of lines) {
+        const data = line.trim().replace(/^data:\s*/, '');
+        if (!data || data === '[DONE]' || !line.trim().startsWith('data:')) continue;
+        try {
+          const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+          if (delta) {
+            out += delta;
+            onDelta?.(delta);
+          }
+        } catch {}
+      }
+    }
+    return out.trim();
   };
 }

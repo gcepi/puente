@@ -1,4 +1,4 @@
-import { connect, CaptionPane, keepAwake, openMic, audioContext, micHelp, $ } from './common.js';
+import { connect, CaptionPane, Revealer, keepAwake, openMic, audioContext, micHelp, $ } from './common.js';
 import { PcmPlayer } from './player.js';
 
 // Replies from the team are spoken to the host in English.
@@ -92,6 +92,19 @@ function run(s) {
 
   const en = new CaptionPane($('#enPane'));
   const es = new CaptionPane($('#esPane'));
+  const reveal = { en: new Revealer(en), es: new Revealer(es) };
+
+  // Caption size for a cast screen (A- / A+), remembered on this computer.
+  let monSize = Number(store.get('puente.monSize')) || 32;
+  const applyMon = () => document.documentElement.style.setProperty('--mon-size', `${monSize}px`);
+  applyMon();
+  const resizeMon = (d) => {
+    monSize = Math.max(18, Math.min(72, monSize + d));
+    applyMon();
+    store.set('puente.monSize', monSize, true);
+  };
+  $('#monSmaller').onclick = () => resizeMon(-4);
+  $('#monBigger').onclick = () => resizeMon(4);
   let mic = null;
   let talking = false;
   let tailUntil = 0;
@@ -112,6 +125,10 @@ function run(s) {
         if (m.t === 'cap') {
           if (m.text !== '…') $('#hostErr').textContent = '';
           (m.lang === 'en' ? en : es).set(m.id, m.text, m.final, m.who);
+        } else if (m.t === 'cue') {
+          if (m.text) $('#hostErr').textContent = '';
+          // Replies play on this screen, so they sync to its audio; the briefing is paced to match the phones.
+          reveal[m.lang]?.add(m, m.to === 'host' ? player.startIn() : null);
         } else if (m.t === 'state') {
           $('#who').textContent = m.floor ? `${m.floor} is replying…` : `${m.listeners} listening`;
           $('#dot').className = `dot ${m.floor || talking ? 'live' : 'online'}`;
@@ -122,6 +139,59 @@ function run(s) {
   );
   // Browsers only allow sound after a tap; the first tap anywhere unlocks reply audio.
   document.addEventListener('pointerdown', () => !player.ctx && player.unlock().catch(() => {}), { once: true });
+
+  // ---- live English while holding: the browser's own dictation (Chrome; Safari where available) ----
+  // The accurate transcript replaces it when the button is released.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  let liveBase = '';
+  let liveSession = '';
+  let liveSentAt = 0;
+  let liveTimer = null;
+  const joinText = (a, b) => [a, b].filter(Boolean).join(' ').trim();
+  const sendLive = () => {
+    clearTimeout(liveTimer);
+    const wait = 150 - (Date.now() - liveSentAt);
+    if (wait > 0) return void (liveTimer = setTimeout(sendLive, wait));
+    liveSentAt = Date.now();
+    if (talking) conn.send({ t: 'live', text: joinText(liveBase, liveSession) });
+  };
+  function startLive() {
+    if (!SR) return;
+    liveBase = '';
+    liveSession = '';
+    try {
+      rec = new SR();
+      rec.lang = 'en-US';
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = (e) => {
+        liveSession = Array.from(e.results, (r) => r[0].transcript).join('');
+        sendLive();
+      };
+      rec.onend = () => {
+        // Dictation stops on its own after a pause; keep going while the button is held.
+        liveBase = joinText(liveBase, liveSession);
+        liveSession = '';
+        if (talking && rec) {
+          try {
+            rec.start();
+          } catch {}
+        }
+      };
+      rec.onerror = () => {};
+      rec.start();
+    } catch {
+      rec = null;
+    }
+  }
+  function stopLive() {
+    const r = rec;
+    rec = null;
+    try {
+      r?.stop();
+    } catch {}
+  }
 
   // ---- push to talk: hold, speak, release; the Spanish voice repeats it ----
   const pb = $('#pttBtn');
@@ -137,6 +207,7 @@ function run(s) {
     paint();
     player.skip(); // stop any reply audio so it isn't recorded
     conn.send({ t: 'ptt', down: true });
+    startLive();
     if (!mic) {
       try {
         mic = await Promise.race([
@@ -159,6 +230,7 @@ function run(s) {
     if (!talking) return;
     talking = false;
     paint();
+    stopLive();
     // Keep the last syllable: send a beat of audio after release.
     tailUntil = Date.now() + 350;
     setTimeout(() => conn.send({ t: 'ptt', down: false }), 350);

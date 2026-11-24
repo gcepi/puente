@@ -60,6 +60,11 @@ export class CaptionPane {
   }
   set(id, text, final, who) {
     let p = this.lines.get(id);
+    if (p && !text && final) {
+      p.remove();
+      this.lines.delete(id);
+      return;
+    }
     if (!p) {
       if (!text) return;
       p = document.createElement('p');
@@ -104,6 +109,56 @@ export function keepAwake() {
 }
 
 export const $ = (s) => document.querySelector(s);
+
+/**
+ * Reveals spoken sentences word by word, in step with the voice.
+ * Each cue says when its audio starts (startIn seconds from now, from the audio
+ * clock) and how long it lasts. Screens that aren't playing that audio pass
+ * startIn = null and get the same pacing on their own clock.
+ */
+export class Revealer {
+  constructor(pane, leadIn = 0.3) {
+    this.pane = pane;
+    this.leadIn = leadIn;
+    this.lines = new Map(); // id -> text already fully shown
+    this.items = [];
+    this.clock = 0; // own clock: when the next unsynced sentence may start
+    this.timer = null;
+  }
+  add({ id, text, seconds, last, who }, startIn) {
+    const now = performance.now() / 1000;
+    const dur = text ? Math.max(seconds || text.length / 14, 0.4) : 0;
+    const start = startIn == null ? Math.max(now + this.leadIn, this.clock) : now + startIn;
+    if (startIn == null) this.clock = start + dur;
+    if (!this.lines.has(id)) this.lines.set(id, '');
+    this.items.push({ id, text, start, dur, last, who });
+    this.tick();
+    if (!this.timer) this.timer = setInterval(() => this.tick(), 80);
+  }
+  tick() {
+    const now = performance.now() / 1000;
+    const keep = [];
+    for (const it of this.items) {
+      if (now < it.start) {
+        keep.push(it);
+        continue;
+      }
+      const done = this.lines.get(it.id);
+      const words = it.text.split(/\s+/).filter(Boolean);
+      const frac = it.dur ? Math.min(1, (now - it.start) / it.dur) : 1;
+      const shown = words.slice(0, Math.ceil(words.length * frac)).join(' ');
+      const text = [done, shown].filter(Boolean).join(' ');
+      if (frac >= 1) this.lines.set(it.id, text);
+      else keep.push(it);
+      if (text) this.pane.set(it.id, text, it.last && frac >= 1, it.who);
+    }
+    this.items = keep;
+    if (!keep.length) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+}
 
 /**
  * One AudioContext for the whole page, used for both playback and the mic.

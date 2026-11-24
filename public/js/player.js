@@ -86,6 +86,13 @@ export class PcmPlayer {
     this.stats.seconds += buf.duration;
   }
 
+  /** Seconds until audio queued now would start playing, or null if this screen isn't playing voice. */
+  startIn() {
+    if (!this.ctx || !this.enabled) return null;
+    const now = this.ctx.currentTime;
+    return (this.next < now + 0.02 ? now + 0.25 : this.next) - now;
+  }
+
   skip() {
     for (const s of this.sources) {
       try {

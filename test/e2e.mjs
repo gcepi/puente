@@ -81,7 +81,13 @@ try {
   if ((await l1.$$eval('#enPane .line', (n) => n.length)) !== 0) fail('captions appeared before anyone talked');
   // Hold long enough for the mock to "hear" the first sentence, release, then the voice speaks.
   await hold(host, '#pttBtn', 3600);
+  // Spanish is revealed word by word with the voice, not dumped all at once.
+  await l1.waitForFunction(() => document.querySelector('#esPane .line'), null, { timeout: 15000 });
+  const early = (await l1.textContent('#esPane .line')).split(' ').length;
   await l1.waitForFunction(() => document.querySelectorAll('#esPane .line:not(.partial)').length >= 1, null, { timeout: 15000 });
+  const full = (await l1.textContent('#esPane .line')).split(' ').length;
+  console.log(`reveal: ${early} words at first, ${full} when the voice finished`);
+  if (early >= full) fail('Spanish appeared all at once instead of with the voice');
   await hold(host, '#pttBtn', 2500);
   await l1.waitForFunction(() => document.querySelectorAll('#esPane .line:not(.partial)').length >= 2, null, { timeout: 15000 });
   const es = await l1.$$eval('#esPane .line', (n) => n.map((x) => x.textContent));

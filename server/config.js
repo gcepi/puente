@@ -64,7 +64,7 @@ export const config = {
   ttsSpeed: num('TTS_SPEED', 1.08),
   // tts-1-hd keeps the same voice every time; gpt-4o-mini-tts is more expressive but can drift between requests.
   openaiTtsModel: env('OPENAI_TTS_MODEL', 'tts-1-hd'),
-  openaiTtsVoice: env('OPENAI_TTS_VOICE', 'nova'),
+  openaiTtsVoice: env('OPENAI_TTS_VOICE', 'onyx'), // onyx: OpenAI's deepest male voice
 
   glossary: loadGlossary(),
 };

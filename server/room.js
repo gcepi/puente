@@ -91,7 +91,13 @@ class Room {
     } else if (msg.t === 'ptt') {
       this.pttDown = !!msg.down;
       if (this.pttDown && !this.engine) this.startEngine();
+      this.liveOpen = this.pttDown;
       if (!this.pttDown) this.engine?.flush();
+    } else if (msg.t === 'live') {
+      // Browser dictation while the host holds the button: show it on the line this turn will use.
+      if (this.liveOpen && this.engine?.peekId && typeof msg.text === 'string') {
+        this.onCaption({ lang: 'en', id: this.engine.peekId(), text: msg.text.slice(0, 4000), final: false });
+      }
     } else if (msg.t === 'flush') this.engine?.flush();
     else if (msg.t === 'end') this.end();
   }
@@ -115,6 +121,7 @@ class Room {
     }
     this.engine = createEngine(this.engineName, {
       caption: (c) => this.onCaption(c),
+      cue: (c) => this.onCue(c, undefined, 'listeners'),
       audio: (buf) => this.onAudio(buf),
       error: (message) => {
         console.error(`[${this.code}] ${message}`);
@@ -188,6 +195,7 @@ class Room {
       this.engineName,
       {
         caption: (c) => this.onCaption({ ...c, id: tag + c.id }, name),
+        cue: (c) => this.onCue({ ...c, id: tag + c.id }, name, 'host'),
         audio: (buf) => {
           // Replies are spoken to the host only.
           this.replyAudioUntil = Math.max(this.replyAudioUntil, Date.now()) + (buf.length / 2 / config.sampleRate) * 1000 + 300;
@@ -218,8 +226,18 @@ class Room {
   }
 
   // ---- fan-out ----
-  onCaption({ lang, id, text, final }, who) {
+  /** One spoken sentence: its text, sent just ahead of its audio, with the audio's length. */
+  onCue({ id, lang, text, seconds, last }, who, to) {
     const line = this.lines.get(id) ?? { en: '', es: '', who, at: Date.now() };
+    if (text) line[lang] = line[lang] ? `${line[lang]} ${text}` : text;
+    this.lines.set(id, line);
+    this.broadcast({ t: 'cue', id, lang, text, seconds, last, who, to });
+  }
+
+  onCaption({ lang, id, text, final }, who) {
+    const prev = this.lines.get(id);
+    if (!final && text === '…' && prev?.[lang]) return; // keep live text instead of a placeholder
+    const line = prev ?? { en: '', es: '', who, at: Date.now() };
     line[lang] = text;
     this.lines.set(id, line);
     if (this.lines.size > 2000) this.lines.delete(this.lines.keys().next().value);

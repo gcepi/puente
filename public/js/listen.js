@@ -1,4 +1,4 @@
-import { connect, CaptionPane, keepAwake, openMic, micPossible, audioContext, micHelp, $ } from './common.js';
+import { connect, CaptionPane, Revealer, keepAwake, openMic, micPossible, audioContext, micHelp, $ } from './common.js';
 import { PcmPlayer } from './player.js';
 
 const player = new PcmPlayer();
@@ -43,6 +43,7 @@ function start(code, name, withAudio) {
   keepAwake();
   const en = new CaptionPane($('#enPane'));
   const es = new CaptionPane($('#esPane'));
+  const reveal = { en: new Revealer(en), es: new Revealer(es) };
   let online = false;
   let live = false;
   const paint = () => ($('#dot').className = `dot ${live ? 'live' : online ? 'online' : ''}`);
@@ -65,6 +66,10 @@ function start(code, name, withAudio) {
         if (m.t === 'cap') {
           $(m.lang === 'en' ? '#enEmpty' : '#esEmpty')?.remove();
           (m.lang === 'en' ? en : es).set(m.id, m.text, m.final, m.who);
+        } else if (m.t === 'cue') {
+          $(m.lang === 'en' ? '#enEmpty' : '#esEmpty')?.remove();
+          // Synced to this phone's audio clock when it plays this voice; paced otherwise.
+          reveal[m.lang]?.add(m, m.to === 'listeners' ? player.startIn() : null);
         } else if (m.t === 'state') {
           live = m.live;
           floor = m.floor;
