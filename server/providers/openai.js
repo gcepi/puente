@@ -29,21 +29,66 @@ async function check(res, label) {
   throw new Error(`${label} ${res.status}: ${body.slice(0, 200)}`);
 }
 
-export function createOpenAiTranscriber({ apiKey, model }) {
-  return async function transcribe(pcm, language) {
+const countWords = (t) => (t.match(/[\p{L}\p{N}']+/gu) ?? []).length;
+const norm = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * Speech to text with safety nets:
+ * - every request has a time limit and is retried once on a network or server error;
+ * - names are given as spelling hints, and a transcript that is just the hint echoed back is dropped;
+ * - if the transcript is far too short for the amount of speech (a known failure of the
+ *   gpt-4o transcribe models on long audio with pauses), it is redone with whisper-1 and
+ *   the longer transcript is kept.
+ */
+export function createOpenAiTranscriber({ apiKey, model, fallbackModel = 'whisper-1', names = [], log = () => {} }) {
+  const hint = names.length ? `${names.join(', ')}.` : '';
+  const hintWords = new Set(norm(hint).split(' ').filter(Boolean));
+  const isEcho = (text) => {
+    const words = norm(text).split(' ').filter(Boolean);
+    return words.length > 1 && words.every((w) => hintWords.has(w));
+  };
+
+  async function once(pcm, language, m) {
     const form = new FormData();
     form.append('file', new Blob([pcmToWav(pcm)], { type: 'audio/wav' }), 'turn.wav');
-    form.append('model', model);
+    form.append('model', m);
     form.append('language', language);
     form.append('response_format', 'json');
-    // No 'prompt' hint: on near-silent audio the model echoes the hint back as if it were speech.
+    if (hint) form.append('prompt', hint);
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}` },
       body: form,
+      signal: AbortSignal.timeout(25_000),
     });
-    const json = await check(res, 'OpenAI transcription');
-    return (json.text ?? '').trim();
+    const json = await check(res, `OpenAI transcription (${m})`);
+    const text = (json.text ?? '').trim();
+    return isEcho(text) ? '' : text;
+  }
+
+  async function withRetry(pcm, language, m) {
+    try {
+      return await once(pcm, language, m);
+    } catch (e) {
+      if (/ 4\d\d:/.test(e.message) && !/ 429:/.test(e.message)) throw e; // bad request: retrying won't help
+      return once(pcm, language, m);
+    }
+  }
+
+  return async function transcribe(pcm, language, voicedSecs = 0) {
+    let text = await withRetry(pcm, language, model);
+    const words = countWords(text);
+    const tooShort = voicedSecs >= 0.8 && (words === 0 || (voicedSecs >= 2 && words < voicedSecs));
+    if (tooShort && fallbackModel && fallbackModel !== model) {
+      try {
+        const alt = await withRetry(pcm, language, fallbackModel);
+        log(`transcript check: ${voicedSecs.toFixed(1)}s of speech gave ${words} words; ${fallbackModel} gave ${countWords(alt)}`);
+        if (countWords(alt) > words) text = alt;
+      } catch (e) {
+        log(`fallback transcription failed: ${e.message}`);
+      }
+    }
+    return text;
   };
 }
 
@@ -56,6 +101,7 @@ export function createOpenAiTranslator({ apiKey, model, glossary, direction }) {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(30_000),
       body: JSON.stringify({
         model,
         stream: true,

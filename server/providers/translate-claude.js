@@ -18,7 +18,19 @@ Rules:
 Trade terms the team uses (Spanish → English):
 ${terms || '- (none)'}`;
 
+function namesBlock(glossary) {
+  const names = glossary?.names ?? [];
+  if (!names.length) return '';
+  return `\n\nNames of people, places and companies. Keep them exactly as written, never translate them. Speech recognition sometimes mishears them; when the context fits, use the correct name:\n${names
+    .map((n) => `- ${n.name}${n.about ? ` (${n.about})` : ''}${n.misheard?.length ? `; may appear as ${n.misheard.map((m) => `"${m}"`).join(', ')}` : ''}`)
+    .join('\n')}`;
+}
+
 export function buildSystemPrompt(glossary, direction = 'en-es') {
+  return basePrompt(glossary, direction) + namesBlock(glossary);
+}
+
+function basePrompt(glossary, direction) {
   const list = glossary?.terms ?? [];
   if (direction === 'es-en') return REPLY_PROMPT(list.map((t) => `- "${t.es}" → "${t.en}"`).join('\n'));
   const terms = list.map((t) => `- "${t.en}" → "${t.es}"`).join('\n');

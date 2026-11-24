@@ -1,28 +1,148 @@
 {
-  "_note": "Edit freely. 'en' is what the speaker says; 'es' is the Mexican Spanish term the team actually uses on the job. Terms are also sent to speech recognition so it hears them correctly.",
+  "_note": "Edit freely. 'names' are people, places and companies: kept exactly, given to speech recognition as spelling hints, and 'misheard' lists what recognition tends to write instead. 'terms' map English trade words to the Mexican Spanish the team uses.",
+  "names": [
+    {
+      "name": "Hessel",
+      "about": "owner of Dwell Communities, sometimes called HB",
+      "misheard": [
+        "Hustle",
+        "Hassle",
+        "Hassel",
+        "Hessle",
+        "Vessel"
+      ]
+    },
+    {
+      "name": "Dwell Communities",
+      "about": "the property management company",
+      "misheard": [
+        "Dwell Community",
+        "dual communities"
+      ]
+    },
+    {
+      "name": "Clairmont",
+      "about": "a Dwell property",
+      "misheard": [
+        "Claremont"
+      ]
+    },
+    {
+      "name": "Ilion",
+      "about": "a Dwell property",
+      "misheard": [
+        "Ilium",
+        "Elian",
+        "Ileon"
+      ]
+    },
+    {
+      "name": "Westside",
+      "about": "a Dwell property",
+      "misheard": [
+        "West Side"
+      ]
+    },
+    {
+      "name": "750",
+      "about": "a Dwell property (say \"siete cincuenta\")",
+      "misheard": [
+        "seven fifty"
+      ]
+    }
+  ],
   "terms": [
-    { "en": "make-ready", "es": "preparación de unidad" },
-    { "en": "turn", "es": "preparación de unidad (turn)" },
-    { "en": "work order", "es": "orden de trabajo" },
-    { "en": "unit", "es": "departamento" },
-    { "en": "move-out", "es": "desocupación" },
-    { "en": "move-in", "es": "mudanza de entrada" },
-    { "en": "HVAC", "es": "aire acondicionado y calefacción (HVAC)" },
-    { "en": "AC", "es": "el aire (el clima)" },
-    { "en": "breaker", "es": "el breaker (pastilla)" },
-    { "en": "GFCI", "es": "contacto GFCI" },
-    { "en": "outlet", "es": "contacto" },
-    { "en": "water heater", "es": "boiler (calentador de agua)" },
-    { "en": "garbage disposal", "es": "triturador de basura" },
-    { "en": "drywall", "es": "tablaroca" },
-    { "en": "caulk", "es": "sellador (caulk)" },
-    { "en": "smoke detector", "es": "detector de humo" },
-    { "en": "leak", "es": "fuga" },
-    { "en": "mold", "es": "moho" },
-    { "en": "pest control", "es": "fumigación" },
-    { "en": "punch list", "es": "lista de pendientes" },
-    { "en": "AppFolio", "es": "AppFolio" },
-    { "en": "resident", "es": "residente" },
-    { "en": "property manager", "es": "gerente de la propiedad" }
+    {
+      "en": "make-ready",
+      "es": "preparación de unidad"
+    },
+    {
+      "en": "turn",
+      "es": "preparación de unidad (turn)"
+    },
+    {
+      "en": "work order",
+      "es": "orden de trabajo"
+    },
+    {
+      "en": "unit",
+      "es": "departamento"
+    },
+    {
+      "en": "move-out",
+      "es": "desocupación"
+    },
+    {
+      "en": "move-in",
+      "es": "mudanza de entrada"
+    },
+    {
+      "en": "HVAC",
+      "es": "aire acondicionado y calefacción (HVAC)"
+    },
+    {
+      "en": "AC",
+      "es": "el aire (el clima)"
+    },
+    {
+      "en": "breaker",
+      "es": "el breaker (pastilla)"
+    },
+    {
+      "en": "GFCI",
+      "es": "contacto GFCI"
+    },
+    {
+      "en": "outlet",
+      "es": "contacto"
+    },
+    {
+      "en": "water heater",
+      "es": "boiler (calentador de agua)"
+    },
+    {
+      "en": "garbage disposal",
+      "es": "triturador de basura"
+    },
+    {
+      "en": "drywall",
+      "es": "tablaroca"
+    },
+    {
+      "en": "caulk",
+      "es": "sellador (caulk)"
+    },
+    {
+      "en": "smoke detector",
+      "es": "detector de humo"
+    },
+    {
+      "en": "leak",
+      "es": "fuga"
+    },
+    {
+      "en": "mold",
+      "es": "moho"
+    },
+    {
+      "en": "pest control",
+      "es": "fumigación"
+    },
+    {
+      "en": "punch list",
+      "es": "lista de pendientes"
+    },
+    {
+      "en": "AppFolio",
+      "es": "AppFolio"
+    },
+    {
+      "en": "resident",
+      "es": "residente"
+    },
+    {
+      "en": "property manager",
+      "es": "gerente de la propiedad"
+    }
   ]
 }

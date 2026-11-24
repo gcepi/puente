@@ -108,6 +108,7 @@ function run(s) {
   let mic = null;
   let talking = false;
   let tailUntil = 0;
+  let dropped = 0;
 
   const conn = connect(
     { role: 'host', room: s.code, token: s.hostToken },
@@ -125,6 +126,10 @@ function run(s) {
         if (m.t === 'cap') {
           if (m.text !== '…') $('#hostErr').textContent = '';
           (m.lang === 'en' ? en : es).set(m.id, m.text, m.final, m.who);
+        } else if (m.t === 'turn') {
+          // One-line check after every turn: how much speech arrived and how many words came back.
+          const voice = m.voiceIn != null ? ` · voice after ${(m.voiceIn / 1000).toFixed(1)} s` : '';
+          $('#turnInfo').textContent = `Last turn: heard ${m.speechSeconds.toFixed(1)} s of speech · ${m.words} words${voice}`;
         } else if (m.t === 'cuelen') {
           reveal[m.lang]?.setLength(m.id, m.seconds);
         } else if (m.t === 'cue') {
@@ -141,6 +146,12 @@ function run(s) {
   );
   // Browsers only allow sound after a tap; the first tap anywhere unlocks reply audio.
   document.addEventListener('pointerdown', () => !player.ctx && player.unlock().catch(() => {}), { once: true });
+
+  // Live English can be switched off if dictation ever misbehaves in a browser.
+  const lt = $('#liveToggle');
+  lt.checked = store.get('puente.live') !== 'off';
+  lt.disabled = !(window.SpeechRecognition || window.webkitSpeechRecognition);
+  lt.onchange = () => store.set('puente.live', lt.checked ? 'on' : 'off', true);
 
   // ---- live English while holding: the browser's own dictation (Chrome; Safari where available) ----
   // The accurate transcript replaces it when the button is released.
@@ -159,7 +170,7 @@ function run(s) {
     if (talking) conn.send({ t: 'live', text: joinText(liveBase, liveSession) });
   };
   function startLive() {
-    if (!SR) return;
+    if (!SR || !$('#liveToggle').checked) return;
     liveBase = '';
     liveSession = '';
     try {
@@ -208,13 +219,20 @@ function run(s) {
     talking = true;
     paint();
     player.skip(); // stop any reply audio so it isn't recorded
+    dropped = 0;
+    $('#turnInfo').textContent = '';
     conn.send({ t: 'ptt', down: true });
     startLive();
     if (!mic) {
       try {
         mic = await Promise.race([
           openMic(
-            (pcm) => (talking || Date.now() < tailUntil) && conn.buffered < 512 * 1024 && conn.send(pcm),
+            (pcm) => {
+              if (!talking && Date.now() >= tailUntil) return;
+              // Only a badly stalled connection drops audio, and the host is told.
+              if (conn.buffered < 4 * 1024 * 1024) conn.send(pcm);
+              else dropped++;
+            },
             (level) => ($('#meter').style.width = `${talking ? Math.min(100, level * 400) : 0}%`)
           ),
           new Promise((_, reject) => setTimeout(() => reject(new Error('it did not start within 5 seconds; check the browser allows the microphone for this site')), 5000)),
@@ -235,7 +253,10 @@ function run(s) {
     stopLive();
     // Keep the last syllable: send a beat of audio after release.
     tailUntil = Date.now() + 250;
-    setTimeout(() => conn.send({ t: 'ptt', down: false }), 250);
+    setTimeout(() => {
+      conn.send({ t: 'ptt', down: false, dropped });
+      dropped = 0;
+    }, 250);
   }
   pb.addEventListener('pointerdown', (e) => {
     e.preventDefault();

@@ -148,9 +148,12 @@ export class Revealer {
   tick() {
     const now = performance.now() / 1000;
     const keep = [];
+    const waiting = new Set(); // lines with an earlier sentence still revealing
     for (const it of this.items) {
-      if (now < it.start) {
+      // A sentence waits for the one before it on the same line, so none is ever lost or reordered.
+      if (waiting.has(it.id) || now < it.start) {
         keep.push(it);
+        waiting.add(it.id);
         continue;
       }
       const done = this.lines.get(it.id);
@@ -159,7 +162,10 @@ export class Revealer {
       const shown = words.slice(0, Math.ceil(words.length * frac)).join(' ');
       const text = [done, shown].filter(Boolean).join(' ');
       if (frac >= 1) this.lines.set(it.id, text);
-      else keep.push(it);
+      else {
+        keep.push(it);
+        waiting.add(it.id);
+      }
       if (text) this.pane.set(it.id, text, it.last && frac >= 1, it.who);
     }
     this.items = keep;

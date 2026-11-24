@@ -93,6 +93,11 @@ class Room {
       if (this.pttDown && !this.engine) this.startEngine();
       this.liveOpen = this.pttDown;
       if (!this.pttDown) this.engine?.flush();
+      if (!this.pttDown && msg.dropped > 0) {
+        const secs = (msg.dropped * 0.04).toFixed(1);
+        console.warn(`[${this.code}] host connection dropped ${secs}s of audio`);
+        send(this.host, { t: 'error', message: `Slow connection: about ${secs} s of what you said didn't reach the server.` });
+      }
     } else if (msg.t === 'live') {
       // Browser dictation while the host holds the button: show it on the line this turn will use.
       if (this.liveOpen && this.engine?.peekId && typeof msg.text === 'string') {
@@ -123,6 +128,10 @@ class Room {
       caption: (c) => this.onCaption(c),
       cue: (c) => this.onCue(c, undefined, 'listeners'),
       cueLength: (c) => this.broadcast({ t: 'cuelen', ...c, to: 'listeners' }),
+      stats: (s) => {
+        console.log(`[${this.code}] turn ${s.id}: ${s.speechSeconds.toFixed(1)}s speech, ${s.parts} part(s), ${s.words} words, transcript ${s.transcribedIn}ms, voice ${s.voiceIn ?? '-'}ms after release`);
+        send(this.host, { t: 'turn', ...s });
+      },
       audio: (buf) => this.onAudio(buf),
       error: (message) => {
         console.error(`[${this.code}] ${message}`);

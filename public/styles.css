@@ -152,3 +152,7 @@ input.code { text-transform: uppercase; letter-spacing: 0.35em; font-size: 28px;
 }
 .size-ctl { position: absolute; top: 8px; right: 10px; display: flex; gap: 6px; z-index: 2; }
 .size-ctl .icon-btn { height: 32px; min-width: 38px; font-size: 13px; }
+
+.toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+.toggle input { width: 18px; height: 18px; padding: 0; accent-color: var(--accent); }
+#turnInfo { margin: -6px 0 0; min-height: 1.2em; }

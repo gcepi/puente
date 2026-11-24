@@ -25,7 +25,12 @@ export function createEngine(name, hooks, direction = 'en-es') {
     return new TurnEngine(
       hooks,
       {
-        transcribe: createOpenAiTranscriber({ apiKey: config.openaiKey, model: config.openaiSttModel, glossary: config.glossary }),
+        transcribe: createOpenAiTranscriber({
+          apiKey: config.openaiKey,
+          model: config.openaiSttModel,
+          names: (config.glossary.names ?? []).map((n) => n.name),
+          log: (m) => console.log(`[transcribe] ${m}`),
+        }),
         translate,
         // ElevenLabs gives the most natural, consistent voice when its keys are set.
         speak:

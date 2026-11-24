@@ -8,8 +8,9 @@ const MAX_SECONDS = 120; // a single turn is capped so memory stays bounded
 // Speech check: transcription models invent words (or echo old text) when given
 // silence, so a turn must contain at least MIN_VOICED_SECONDS of voice-level audio.
 const FRAME = 720; // 30 ms
-const VOICE_RMS = 0.02;
-const MIN_VOICED_SECONDS = 0.3;
+const VOICE_RMS = 0.012; // a normal speaking voice on a laptop mic is well above this
+const MIN_VOICED_SECONDS = 0.25;
+const TURN_TIMEOUT_MS = 90_000; // a stuck turn is abandoned so later turns are never blocked
 
 export function voicedSeconds(pcm) {
   let voiced = 0;
@@ -84,7 +85,8 @@ export class TurnEngine {
    * @param {{transcribe:Function, translate:Function, speak:Function}} deps
    * @param {{src?:string, dst?:string, speed?:number}} opts
    */
-  constructor(hooks, deps, { src = 'en', dst = 'es', speed = 1 } = {}) {
+  constructor(hooks, deps, { src = 'en', dst = 'es', speed = 1, turnTimeoutMs = TURN_TIMEOUT_MS } = {}) {
+    this.turnTimeoutMs = turnTimeoutMs;
     this.hooks = hooks;
     this.deps = deps;
     this.src = src;
@@ -131,10 +133,11 @@ export class TurnEngine {
 
   closeSegment() {
     const pcm = Buffer.concat(this.chunks);
+    const voiced = this.voiced;
     this.chunks = [];
     this.voiced = 0;
     this.quiet = 0;
-    const job = this.deps.transcribe(pcm, this.src).then(
+    const job = this.deps.transcribe(pcm, this.src, voiced).then(
       (text) => ({ text }),
       (error) => ({ error })
     );
@@ -150,9 +153,10 @@ export class TurnEngine {
       : rest.length >= MIN_SECONDS * RATE * 2 && voicedSeconds(rest) >= MIN_VOICED_SECONDS;
     const parts = [...this.segments];
     if (restHasSpeech) {
-      parts.push(this.deps.transcribe(rest, this.src).then((text) => ({ text }), (error) => ({ error })));
+      parts.push(this.deps.transcribe(rest, this.src, voicedSeconds(rest)).then((text) => ({ text }), (error) => ({ error })));
     }
     const hadAudio = this.bytes > 0;
+    const stats = { speechSeconds: this.turnVoiced, parts: parts.length, releasedAt: Date.now() };
     this.reset();
     if (!hadAudio) return;
     if (!parts.length) {
@@ -162,12 +166,22 @@ export class TurnEngine {
     }
     const id = `t${this.seq++}`;
     this.hooks.caption({ lang: this.src, id, text: '…', final: false });
-    // Turns are handled strictly in order, so voices never overlap.
-    this.chain = this.chain.then(() => this.process(id, parts)).catch((e) => this.hooks.error(e.message));
+    // Turns are handled strictly in order, so voices never overlap. A watchdog makes sure
+    // one stuck request can never block the turns behind it.
+    this.chain = this.chain
+      .then(() => {
+        let timer;
+        const watchdog = new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('That turn took too long and was skipped. Please say it again.')), this.turnTimeoutMs);
+        });
+        return Promise.race([this.process(id, parts, stats), watchdog]).finally(() => clearTimeout(timer));
+      })
+      .catch((e) => this.hooks.error(e.message));
   }
 
-  async process(id, parts) {
+  async process(id, parts, stats = {}) {
     const results = await Promise.all(parts);
+    stats.transcribedIn = Date.now() - (stats.releasedAt ?? Date.now());
     const failed = results.find((r) => r.error);
     if (failed) {
       this.hooks.caption({ lang: this.src, id, text: '(no se pudo escuchar / could not transcribe)', final: true });
@@ -179,6 +193,8 @@ export class TurnEngine {
       return;
     }
     this.hooks.caption({ lang: this.src, id, text, final: true });
+    stats.words = (text.match(/[\p{L}\p{N}']+/gu) ?? []).length;
+    this.firstVoiceStats = stats;
 
     // Translate the whole turn as a stream; each finished sentence is voiced right away, in order.
     let speech = Promise.resolve();
@@ -198,6 +214,7 @@ export class TurnEngine {
     await speech;
     this.hooks.cue({ id, lang: this.dst, text: '', seconds: 0, last: true });
     this.context.push({ src: text, dst: out });
+    this.hooks.stats?.({ id, ...stats });
   }
 
   /**
@@ -211,6 +228,8 @@ export class TurnEngine {
     try {
       await this.deps.speak(sentence, (b) => {
         if (!started()) {
+          const s = this.firstVoiceStats;
+          if (s && s.releasedAt && s.voiceIn == null) s.voiceIn = Date.now() - s.releasedAt;
           this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: sentence.length / this.charsPerSecond, last: false });
         }
         bytes += b.length;

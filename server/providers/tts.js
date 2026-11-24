@@ -27,6 +27,7 @@ export function createElevenLabsTts({ apiKey, voiceId, model, speed, language = 
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'xi-api-key': apiKey, 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({
         text,
         model_id: model,
@@ -48,6 +49,7 @@ export function createOpenAiTts({ apiKey, model, voice, language = 'es', speed =
     const res = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({
         model,
         voice,
