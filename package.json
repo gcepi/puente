@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "test": "node --test test/*.test.js",
-    "test:e2e": "node test/e2e.mjs"
+    "test:e2e": "node test/e2e.mjs",
+    "test:solo": "node test/solo-e2e.mjs"
   },
   "license": "UNLICENSED",
   "dependencies": {

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#093153">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Puente · One-on-one</title>
+  <link rel="manifest" href="/solo.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="/solo-touch-icon.png">
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/solo.css">
+</head>
+<body>
+  <main id="soloApp" data-state="connecting">
+    <header>
+      <span class="wordmark"><img src="/icon.svg" alt="" width="31" height="31">Puente</span>
+      <a href="/host">Back to host</a>
+    </header>
+    <section class="console" aria-labelledby="pageTitle">
+      <h1 id="pageTitle">One-on-one</h1>
+      <form id="auth" hidden>
+        <label for="passcode">Host passcode</label>
+        <div class="unlock-row">
+          <input id="passcode" type="password" required autocomplete="current-password" aria-describedby="authError">
+          <button type="submit">Unlock</button>
+        </div>
+        <p id="authError" role="alert"></p>
+      </form>
+      <div id="controls" hidden>
+        <p class="instructions">Tap your language to speak. Tap again to translate.<br>
+          <span lang="es">Toca tu idioma para hablar. Toca de nuevo para traducir.</span>
+        </p>
+        <div class="languages">
+          <button id="speakEn" class="speak" type="button" disabled aria-pressed="false">
+            <span class="mic" aria-hidden="true"><i></i></span>
+            <span class="language">English</span><span class="action-label">Speak</span>
+          </button>
+          <button id="speakEs" class="speak" type="button" lang="es" disabled aria-pressed="false">
+            <span class="mic" aria-hidden="true"><i></i></span>
+            <span class="language">Español</span><span class="action-label">Hablar</span>
+          </button>
+        </div>
+      </div>
+      <p id="status" role="status" aria-live="polite">Connecting… · Conectando…</p>
+    </section>
+    <section id="transcript" aria-label="Conversation · Conversación" tabindex="0"></section>
+  </main>
+  <script type="module" src="/js/solo.js"></script>
+</body>
+</html>

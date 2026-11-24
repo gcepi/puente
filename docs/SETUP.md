@@ -30,6 +30,17 @@ Keep earbuds connected and screens on. Listeners who prefer captions can choose 
 
 Anyone with the standing room code can join an active meeting and see recent captions, including replies. Use **End meeting** when finished. Download any transcript you need first. A server restart clears the room and its history.
 
+## One-on-one on a phone
+
+Open **One-on-one on this phone** on the host setup page, or add `/solo` to your service's HTTPS address. Enter the host passcode if prompted. Tap **English** or **Español** to speak, then tap the same button again to translate. The other person can reply on the same phone. Translation needs Wi-Fi or cellular data.
+
+The phone sends each translation to its selected audio output. On speaker, both people can listen. If you share a pair of AirPods, both earbuds play the same translation.
+
+- On **iPhone**, open `/solo` in Safari, tap **Share → Add to Home Screen**, then **Add**. Enable **Open as Web App** if Safari offers it.
+- On **Android**, open `/solo` in Chrome, open **⋮ → Add to Home screen** or **Install app**, and confirm.
+
+The **Puente Solo** Home Screen icon opens one-on-one mode directly. Your meeting QR code still takes crew members to the group meeting.
+
 ## Other settings
 
 - The optional pipeline needs `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY` and the chosen voice provider's credentials. `TTS_PROVIDER` selects its voice provider (`openai` or `elevenlabs`). Push-to-talk uses the ElevenLabs key and voice ID described above.

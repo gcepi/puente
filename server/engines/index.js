@@ -51,18 +51,19 @@ export function withBackupVoice(primary, backup, onFallback) {
  * @param {{caption:Function, audio:Function, error:Function}} hooks
  * @param {'en-es'|'es-en'} direction en-es = the briefing; es-en = a reply from the team
  */
-export function createEngine(name, hooks, direction = 'en-es') {
+export function createEngine(name, hooks, direction = 'en-es', { oneOnOne = false } = {}) {
   const [src, dst] = direction.split('-');
   if (name === 'turn') {
     // One OpenAI key does it all; Claude translates instead if an Anthropic key is set.
     const translate = config.anthropicKey
-      ? createClaudeTranslator({ apiKey: config.anthropicKey, model: config.translateModel, glossary: config.glossary, direction })
+      ? createClaudeTranslator({ apiKey: config.anthropicKey, model: config.translateModel, glossary: config.glossary, direction, oneOnOne })
       : createOpenAiTranslator({
           apiKey: config.openaiKey,
           model: config.openaiTranslateModel,
           fallbackModel: config.openaiTranslateFallback,
           glossary: config.glossary,
           direction,
+          oneOnOne,
           log: (m) => console.log(`[translate] ${m}`),
         });
     return new TurnEngine(

@@ -117,9 +117,9 @@ export function createOpenAiTranscriber({ apiKey, model, fallbackModel = 'whispe
   };
 }
 
-export function createOpenAiTranslator({ apiKey, model, fallbackModel, glossary, direction, log = () => {} }) {
+export function createOpenAiTranslator({ apiKey, model, fallbackModel, glossary, direction, oneOnOne = false, log = () => {} }) {
   let useModel = model;
-  const system = buildSystemPrompt(glossary, direction);
+  const system = buildSystemPrompt(glossary, direction, oneOnOne);
   return async function translate(text, context, onDelta) {
     const ctx = context.length
       ? `Earlier in this meeting (context only):\n${context.map((c) => `SAID: ${c.src}\nTRANSLATED: ${c.dst}`).join('\n')}\n\n`
