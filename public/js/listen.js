@@ -2,6 +2,20 @@ import { connect, CaptionPane, Revealer, keepAwake, openMic, micPossible, audioC
 import { PcmPlayer } from './player.js';
 
 const player = new PcmPlayer();
+
+/** A random id kept on this phone, so a second tab replaces the first instead of doubling the voice. */
+function deviceId() {
+  try {
+    let id = localStorage.getItem('puente.device');
+    if (!id) {
+      id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('puente.device', id);
+    }
+    return id;
+  } catch {
+    return '';
+  }
+}
 window.__puente = { player }; // for tests and on-device debugging
 
 const pathCode = location.pathname.match(/^\/j\/(\d{3})$/)?.[1];
@@ -52,7 +66,7 @@ function start(code, name, withAudio) {
   $('#audioBtn').setAttribute('aria-pressed', String(withAudio));
 
   const conn = connect(
-    { role: 'listen', room: code, name },
+    { role: 'listen', room: code, name, device: deviceId() },
     {
       onOpen: () => conn.send({ t: 'audio', on: player.enabled }),
       onStatus: (s) => {
@@ -61,7 +75,17 @@ function start(code, name, withAudio) {
         if (s === 'online') $('#title').textContent = `Junta ${code}`;
         paint();
       },
-      onGone: () => ($('#title').textContent = 'La junta terminó'),
+      onGone: (code) => {
+        if (code === 4001) {
+          // This phone opened the meeting in a newer tab; go quiet so the voice never plays twice.
+          player.setEnabled(false);
+          player.keeper?.pause();
+          $('#talkbar').classList.add('hidden');
+          $('#title').textContent = 'Abierta en otra pestaña';
+          return;
+        }
+        $('#title').textContent = 'La junta terminó';
+      },
       onMessage: (m) => {
         if (m.t === 'cap') {
           $(m.lang === 'en' ? '#enEmpty' : '#esEmpty')?.remove();

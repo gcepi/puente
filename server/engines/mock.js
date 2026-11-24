@@ -88,6 +88,8 @@ export class MockEngine {
       this.hooks.cue?.({ id, lang: this.dst, text: target, seconds: pcm.length / 2 / RATE, last: false });
       for (let o = 0; o < pcm.length; o += 4800) this.hooks.audio(pcm.subarray(o, o + 4800));
       this.hooks.cue?.({ id, lang: this.dst, text: '', seconds: 0, last: true });
+      const words = heard.split(' ').length;
+      this.hooks.stats?.({ id, speechSeconds: words * 0.28, parts: 1, words, transcribedIn: 0, voiceIn: 300 });
     }, 300);
   }
   async stop() {

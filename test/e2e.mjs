@@ -126,6 +126,41 @@ try {
   await host.waitForSelector('#who:text("listening")', { timeout: 5000 });
   console.log('reply round-trip delivered');
 
+  // Diagnostics: the host can hear what the server heard and the voice it sent.
+  await host.waitForSelector('#turnInfo a');
+  for (const href of await host.$$eval('#turnInfo a', (a) => a.map((x) => x.getAttribute('href')))) {
+    const r = await fetch(`${BASE}${href}`);
+    const n = (await r.arrayBuffer()).byteLength;
+    if (r.status !== 200 || r.headers.get('content-type') !== 'audio/wav' || n < 1000) fail(`diagnostic ${href} -> ${r.status} ${n} bytes`);
+  }
+  console.log('diagnostic audio links work');
+
+  // A second tab on the same phone replaces the first, so the voice never plays twice.
+  const l1b = await l1Ctx.newPage();
+  await l1b.goto(`${BASE}/j/${code}`);
+  await l1b.click('#joinAudio');
+  await l1.waitForSelector('#title:text("Abierta en otra pestaña")', { timeout: 5000 });
+  if (await l1.evaluate(() => window.__puente.player.enabled)) fail('old tab still plays the voice');
+  await host.waitForSelector('#who:text("2 listening")', { timeout: 5000 });
+  console.log('second tab on the same phone silenced the first');
+
+  // A second host window takes over once and the first stops; they must not trade the meeting back and forth.
+  const host2 = await hostCtx.newPage();
+  await host2.goto(`${BASE}/host`);
+  await host2.click('button[type=submit]');
+  await host2.waitForSelector('#roomCode:text("750")');
+  await host.waitForSelector('#takeBack', { timeout: 5000 });
+  let flips = 0;
+  host2.on('websocket', () => flips++);
+  await host2.waitForTimeout(3000);
+  if (flips) fail(`host windows kept trading the meeting (${flips} reconnects)`);
+  const before = await l1b.$$eval('#enPane .line', (n) => n.length);
+  await hold(host2, '#pttBtn', 2500);
+  await l1b.waitForFunction((n) => document.querySelectorAll('#enPane .line').length > n, before, { timeout: 10000 });
+  await host.click('#takeBack');
+  await host2.waitForSelector('#takeBack', { timeout: 5000 });
+  console.log('second host window took over cleanly, and "Use it here" takes it back');
+
   await host.screenshot({ path: path.join(shots, 'host.png') });
   await l1.screenshot({ path: path.join(shots, 'listener-live.png') });
 

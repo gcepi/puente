@@ -61,7 +61,8 @@ class Room {
 
   // ---- host ----
   attachHost(ws) {
-    if (this.host && this.host !== ws) this.host.close(4000, 'replaced');
+    // A newer host window takes over; the old one is told and stops (it must not reconnect and fight back).
+    if (this.host && this.host !== ws) this.host.close(4001, 'moved');
     this.host = ws;
     clearTimeout(this.hostGoneTimer);
     this.sendState();
@@ -92,11 +93,18 @@ class Room {
       this.pttDown = !!msg.down;
       if (this.pttDown && !this.engine) this.startEngine();
       this.liveOpen = this.pttDown;
-      if (!this.pttDown) this.engine?.flush();
-      if (!this.pttDown && msg.dropped > 0) {
-        const secs = (msg.dropped * 0.04).toFixed(1);
-        console.warn(`[${this.code}] host connection dropped ${secs}s of audio`);
-        send(this.host, { t: 'error', message: `Slow connection: about ${secs} s of what you said didn't reach the server.` });
+      if (this.pttDown) this.pressAudio = [];
+      if (!this.pttDown) {
+        this.engine?.flush();
+        this.lastHeard = Buffer.concat(this.pressAudio ?? []);
+        this.pressAudio = [];
+        // Did everything the page recorded actually arrive?
+        const sentSecs = (msg.frames ?? 0) * 0.04;
+        const gotSecs = this.lastHeard.length / 2 / config.sampleRate;
+        if (sentSecs > 1 && gotSecs < sentSecs * 0.8) {
+          console.warn(`[${this.code}] only ${gotSecs.toFixed(1)}s of ${sentSecs.toFixed(1)}s of audio arrived`);
+          send(this.host, { t: 'error', message: `Only ${gotSecs.toFixed(1)} of ${sentSecs.toFixed(1)} s of what you said reached the server. Check the connection.` });
+        }
       }
     } else if (msg.t === 'live') {
       // Browser dictation while the host holds the button: show it on the line this turn will use.
@@ -114,6 +122,7 @@ class Room {
     // host's speaker, ignore the host mic so the reply is not translated back.
     if (this.reply || Date.now() < this.replyAudioUntil) return;
     this.micSeconds += buf.length / 2 / config.sampleRate;
+    if (this.pressAudio && this.pressAudio.length < 3000) this.pressAudio.push(buf); // up to 2 min, for "what it heard"
     this.engine.audio(buf);
   }
 
@@ -124,15 +133,25 @@ class Room {
       send(this.host, { t: 'error', message: `Server is missing: ${missing.join(', ')}` });
       return;
     }
+    this.turnVoice = [];
     this.engine = createEngine(this.engineName, {
       caption: (c) => this.onCaption(c),
-      cue: (c) => this.onCue(c, undefined, 'listeners'),
+      cue: (c) => {
+        this.onCue(c, undefined, 'listeners');
+        if (c.last) {
+          this.lastVoice = Buffer.concat(this.turnVoice ?? []);
+          this.turnVoice = [];
+        }
+      },
       cueLength: (c) => this.broadcast({ t: 'cuelen', ...c, to: 'listeners' }),
       stats: (s) => {
         console.log(`[${this.code}] turn ${s.id}: ${s.speechSeconds.toFixed(1)}s speech, ${s.parts} part(s), ${s.words} words, transcript ${s.transcribedIn}ms, voice ${s.voiceIn ?? '-'}ms after release`);
         send(this.host, { t: 'turn', ...s });
       },
-      audio: (buf) => this.onAudio(buf),
+      audio: (buf) => {
+        if (this.turnVoice.length < 3000) this.turnVoice.push(buf);
+        this.onAudio(buf);
+      },
       error: (message) => {
         console.error(`[${this.code}] ${message}`);
         send(this.host, { t: 'error', message });
@@ -165,8 +184,12 @@ class Room {
   }
 
   // ---- listeners ----
-  attachListener(ws, name) {
-    this.listeners.set(ws, { name: String(name || '').slice(0, 40), audio: true });
+  attachListener(ws, name, device) {
+    // One page per phone: an older tab on the same phone is closed, so the voice never plays twice.
+    if (device) {
+      for (const [other, l] of this.listeners) if (l.device === device && other !== ws) other.close(4001, 'moved');
+    }
+    this.listeners.set(ws, { name: String(name || '').slice(0, 40), audio: true, device: String(device || '').slice(0, 64) });
     this.sendHistory(ws, 20);
     this.sendState();
     ws.on('message', (data, isBinary) => {

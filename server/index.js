@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import { config, engineProblems } from './config.js';
 import { createRoom, getRoom } from './room.js';
 import { ENGINES } from './engines/index.js';
+import { pcmToWav } from './providers/openai.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(here, '..', 'public');
@@ -102,6 +103,17 @@ const server = http.createServer(async (req, res) => {
     return res.end(room.transcriptMarkdown());
   }
 
+  // Diagnostics for the host: the last turn as the server heard it, and the voice it sent.
+  const am = p.match(/^\/api\/rooms\/(\d{3})\/(heard|voice)\.wav$/);
+  if (am) {
+    const room = getRoom(am[1]);
+    if (!room || !safeEqual(url.searchParams.get('token') ?? '', room.hostToken)) return json(res, 404, { error: 'Not found' });
+    const pcm = am[2] === 'heard' ? room.lastHeard : room.lastVoice;
+    if (!pcm?.length) return json(res, 404, { error: 'Nothing yet' });
+    res.writeHead(200, { 'content-type': 'audio/wav', 'cache-control': 'no-store' });
+    return res.end(pcmToWav(pcm));
+  }
+
   const rm = p.match(/^\/api\/rooms\/(\d{3})$/);
   if (rm) {
     const room = getRoom(rm[1]);
@@ -124,7 +136,7 @@ wss.on('connection', (ws, req) => {
     if (!safeEqual(q.get('token') ?? '', room.hostToken)) return ws.close(4003, 'Not the host');
     room.attachHost(ws);
   } else {
-    room.attachListener(ws, q.get('name'));
+    room.attachListener(ws, q.get('name'), q.get('device'));
   }
 });
 

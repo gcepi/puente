@@ -12,20 +12,26 @@ export function connect(params, { onOpen, onMessage, onAudio, onStatus, onGone }
   let delay = 500;
   const open = () => {
     onStatus?.('connecting');
-    ws = new WebSocket(wsUrl(params));
+    const sock = new WebSocket(wsUrl(params));
+    ws = sock;
     ws.binaryType = 'arraybuffer';
     ws.onopen = () => {
+      if (ws !== sock) return;
       delay = 500;
       onStatus?.('online');
       onOpen?.();
     };
     ws.onmessage = (e) => {
+      if (ws !== sock) return;
       if (typeof e.data === 'string') onMessage?.(JSON.parse(e.data));
       else onAudio?.(e.data);
     };
     ws.onclose = (e) => {
-      if (closed) return;
-      if (e.code === 4004 || e.code === 4003 || e.code === 1000) {
+      // Only the current socket counts: an old one closing after a reconnect must not
+      // stop this page or start a second reconnect.
+      if (closed || ws !== sock) return;
+      // 4001: this meeting was opened in another window or tab, which now has it. Don't fight back.
+      if (e.code === 4004 || e.code === 4003 || e.code === 4001 || e.code === 1000) {
         onStatus?.('gone');
         onGone?.(e.code);
         return;
@@ -37,6 +43,10 @@ export function connect(params, { onOpen, onMessage, onAudio, onStatus, onGone }
   };
   open();
   return {
+    reopen: () => {
+      closed = false;
+      open();
+    },
     send: (data) => ws?.readyState === 1 && ws.send(typeof data === 'string' || data instanceof ArrayBuffer ? data : JSON.stringify(data)),
     get buffered() {
       return ws?.bufferedAmount ?? 0;

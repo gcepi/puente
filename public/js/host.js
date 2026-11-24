@@ -109,6 +109,7 @@ function run(s) {
   let talking = false;
   let tailUntil = 0;
   let dropped = 0;
+  let frames = 0; // frames this page sent during the current press, checked by the server
 
   const conn = connect(
     { role: 'host', room: s.code, token: s.hostToken },
@@ -118,7 +119,18 @@ function run(s) {
         if (st === 'offline') $('#hostErr').textContent = 'Connection lost. Reconnecting…';
         if (st === 'online') $('#hostErr').textContent = '';
       },
-      onGone: () => {
+      onGone: (code) => {
+        if (code === 4001) {
+          // Another host window took over. Stop here instead of fighting it for the meeting.
+          mic?.stop();
+          mic = null;
+          $('#hostErr').innerHTML = 'This meeting is now open in another window. <button class="icon-btn" id="takeBack">Use it here</button>';
+          $('#takeBack').onclick = () => {
+            $('#hostErr').textContent = '';
+            conn.reopen();
+          };
+          return;
+        }
         store.set('puente.session', '');
         location.reload();
       },
@@ -129,7 +141,10 @@ function run(s) {
         } else if (m.t === 'turn') {
           // One-line check after every turn: how much speech arrived and how many words came back.
           const voice = m.voiceIn != null ? ` · voice after ${(m.voiceIn / 1000).toFixed(1)} s` : '';
-          $('#turnInfo').textContent = `Last turn: heard ${m.speechSeconds.toFixed(1)} s of speech · ${m.words} words${voice}`;
+          const q = `token=${s.hostToken}&t=${Date.now()}`;
+          $('#turnInfo').innerHTML = `Last turn: heard ${m.speechSeconds.toFixed(1)} s of speech · ${m.words} words${voice}<br>` +
+            `<a href="/api/rooms/${s.code}/heard.wav?${q}" target="_blank" rel="noopener">What it heard</a> · ` +
+            `<a href="/api/rooms/${s.code}/voice.wav?${q}" target="_blank" rel="noopener">Voice it sent</a>`;
         } else if (m.t === 'cuelen') {
           reveal[m.lang]?.setLength(m.id, m.seconds);
         } else if (m.t === 'cue') {
@@ -149,7 +164,8 @@ function run(s) {
 
   // Live English can be switched off if dictation ever misbehaves in a browser.
   const lt = $('#liveToggle');
-  lt.checked = store.get('puente.live') !== 'off';
+  // Off unless switched on: browser dictation is the least proven piece.
+  lt.checked = store.get('puente.live') === 'on';
   lt.disabled = !(window.SpeechRecognition || window.webkitSpeechRecognition);
   lt.onchange = () => store.set('puente.live', lt.checked ? 'on' : 'off', true);
 
@@ -220,6 +236,7 @@ function run(s) {
     paint();
     player.skip(); // stop any reply audio so it isn't recorded
     dropped = 0;
+    frames = 0;
     $('#turnInfo').textContent = '';
     conn.send({ t: 'ptt', down: true });
     startLive();
@@ -232,6 +249,7 @@ function run(s) {
               // Only a badly stalled connection drops audio, and the host is told.
               if (conn.buffered < 4 * 1024 * 1024) conn.send(pcm);
               else dropped++;
+              frames++;
             },
             (level) => ($('#meter').style.width = `${talking ? Math.min(100, level * 400) : 0}%`)
           ),
@@ -254,8 +272,9 @@ function run(s) {
     // Keep the last syllable: send a beat of audio after release.
     tailUntil = Date.now() + 250;
     setTimeout(() => {
-      conn.send({ t: 'ptt', down: false, dropped });
+      conn.send({ t: 'ptt', down: false, dropped, frames });
       dropped = 0;
+      frames = 0;
     }, 250);
   }
   pb.addEventListener('pointerdown', (e) => {
