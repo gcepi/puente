@@ -11,12 +11,12 @@ Works on iPhone and Android as a web page. No app, no accounts for listeners.
 
 | Engine | What | Keys |
 |---|---|---|
-| `turn` (default) | Push to talk: hold, speak, release, and it repeats in Spanish. OpenAI `gpt-4o-transcribe` (whisper-1 as a check), `gpt-4.1` translation, `tts-1-hd` voice. The voice never talks over you. | `OPENAI_API_KEY` |
+| `turn` (default) | Hold to talk, then release for Spanish. OpenAI transcribes. GPT-4.1 translates by default, or Claude when an Anthropic key is set. Adding an ElevenLabs key and voice ID selects that voice with OpenAI as backup. | `OPENAI_API_KEY`. Optional `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` for the clone. |
 | `mock` | Demo: scripted captions plus a tone "voice". Exercises everything with no keys. | none |
-| `openai-translate` | OpenAI `gpt-realtime-translate`: simultaneous speech-to-speech | `OPENAI_API_KEY` |
+| `openai-translate` | OpenAI `gpt-realtime-translate` for simultaneous speech-to-speech. Available through the room API. | `OPENAI_API_KEY` |
 | `pipeline` | Deepgram speech recognition → Claude (Haiku 5.5, glossary, Mexican Spanish) → ElevenLabs or OpenAI voice | `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY`, voice key |
 
-The host picks the engine per meeting. Translation runs once on the server and fans out to every phone, so cost doesn't grow with listeners.
+The host page offers push-to-talk, demo and pipeline when their keys are configured. Translation runs once on the server and fans out to every phone, so cost doesn't grow with listeners.
 
 ## Run locally
 
@@ -32,6 +32,7 @@ Phones need **https** to use the mic (for replies). Captions and voice work over
 
 ```bash
 npm test           # phrase segmentation, ordering, failure handling (no network)
+npx playwright install chromium   # once per development machine
 npm run test:e2e   # host + 3 phone listeners in Chromium with a fake mic; writes test/screenshots/
 ```
 

@@ -56,7 +56,7 @@ export const config = {
   anthropicKey: env('ANTHROPIC_API_KEY', ''),
   translateModel: env('TRANSLATE_MODEL', 'claude-haiku-5-5'),
 
-  // TTS for the pipeline engine: elevenlabs | openai
+  // The pipeline uses this selector. Turn mode chooses ElevenLabs when its credentials are set.
   ttsProvider: env('TTS_PROVIDER', 'elevenlabs'),
   elevenKey: env('ELEVENLABS_API_KEY', ''),
   elevenVoiceId: env('ELEVENLABS_VOICE_ID', ''),

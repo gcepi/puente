@@ -7,6 +7,7 @@ import { config, engineProblems } from './config.js';
 import { createEngine } from './engines/index.js';
 
 const rooms = new Map();
+const REPLY_ECHO_GUARD_MS = 300;
 // Room codes are 3 digits (100-999): easy to say out loud and type on a number pad.
 function newCode() {
   if (rooms.size >= 900) throw new Error('No free room codes');
@@ -35,6 +36,7 @@ export function createRoom(engineName = config.engine) {
 export const getRoom = (code) => rooms.get(String(code || '').trim());
 
 const send = (ws, obj) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify(obj));
+const hostLineId = (generation, id) => `h${generation}-${id}`;
 
 class Room {
   constructor(code, hostToken, engineName) {
@@ -44,6 +46,7 @@ class Room {
     this.host = null;
     this.listeners = new Map(); // ws -> { name, audio }
     this.engine = null;
+    this.hostEngineCount = 0;
     this.mode = 'auto';
     this.pttDown = false;
     this.lines = new Map(); // id -> { en, es, who, at }
@@ -62,18 +65,43 @@ class Room {
   // ---- host ----
   attachHost(ws) {
     // A newer host window takes over; the old one is told and stops (it must not reconnect and fight back).
-    if (this.host && this.host !== ws) this.host.close(4001, 'moved');
+    const previous = this.host;
     this.host = ws;
+    if (previous && previous !== ws) {
+      previous.close(4001, 'moved');
+      this.discardHostHold();
+      this.releaseFloor({ discard: true });
+    }
     clearTimeout(this.hostGoneTimer);
     this.sendState();
     this.sendHistory(ws, 30);
-    ws.on('message', (data, isBinary) => (isBinary ? this.onHostAudio(data) : this.onHostMessage(data)));
+    ws.on('message', (data, isBinary) => {
+      if (this.host !== ws) return;
+      if (isBinary) this.onHostAudio(data);
+      else this.onHostMessage(data);
+    });
     ws.on('close', () => {
       if (this.host !== ws) return;
       this.host = null;
+      this.discardHostHold();
+      this.releaseFloor({ discard: true });
+      this.sendState();
       // Allow a quick reconnect (phone screen lock, network blip) before stopping.
       this.hostGoneTimer = setTimeout(() => this.stopEngine(), 20_000);
     });
+  }
+
+  discardHostHold() {
+    if (!this.pttDown) return;
+    this.pttDown = false;
+    this.liveOpen = false;
+    this.pressAudio = [];
+    // The turn engine resets only the open recording. Released turns stay in its queue.
+    this.engine?.reset?.();
+    if (this.engine?.peekId) {
+      const id = hostLineId(this.hostEngineCount, this.engine.peekId());
+      if (this.lines.delete(id)) this.broadcast({ t: 'cap', id, lang: 'en', text: '', final: true });
+    }
   }
 
   onHostMessage(data) {
@@ -109,7 +137,8 @@ class Room {
     } else if (msg.t === 'live') {
       // Browser dictation while the host holds the button: show it on the line this turn will use.
       if (this.liveOpen && this.engine?.peekId && typeof msg.text === 'string') {
-        this.onCaption({ lang: 'en', id: this.engine.peekId(), text: msg.text.slice(0, 4000), final: false });
+        const id = hostLineId(this.hostEngineCount, this.engine.peekId());
+        this.onCaption({ lang: 'en', id, text: msg.text.slice(0, 4000), final: false });
       }
     } else if (msg.t === 'flush') this.engine?.flush();
     else if (msg.t === 'end') this.end();
@@ -120,7 +149,7 @@ class Room {
     if (this.mode === 'ptt' && !this.pttDown) return;
     // While a team member is replying, or their translated reply is playing on the
     // host's speaker, ignore the host mic so the reply is not translated back.
-    if (this.reply || Date.now() < this.replyAudioUntil) return;
+    if (this.reply || Date.now() < this.replyAudioUntil + REPLY_ECHO_GUARD_MS) return;
     this.micSeconds += buf.length / 2 / config.sampleRate;
     if (this.pressAudio && this.pressAudio.length < 3000) this.pressAudio.push(buf); // up to 2 min, for "what it heard"
     this.engine.audio(buf);
@@ -134,19 +163,23 @@ class Room {
       return;
     }
     this.turnVoice = [];
+    // Engines restart their line counters. Even late callbacks from an old engine need its original prefix.
+    const generation = ++this.hostEngineCount;
+    const withRoomId = (event) => ({ ...event, id: hostLineId(generation, event.id) });
     this.engine = createEngine(this.engineName, {
-      caption: (c) => this.onCaption(c),
+      caption: (c) => this.onCaption(withRoomId(c)),
       cue: (c) => {
-        this.onCue(c, undefined, 'listeners');
+        this.onCue(withRoomId(c), undefined, 'listeners');
         if (c.last) {
           this.lastVoice = Buffer.concat(this.turnVoice ?? []);
           this.turnVoice = [];
         }
       },
-      cueLength: (c) => this.broadcast({ t: 'cuelen', ...c, to: 'listeners' }),
+      cueLength: (c) => this.broadcast({ t: 'cuelen', ...withRoomId(c), to: 'listeners' }),
       stats: (s) => {
-        console.log(`[${this.code}] turn ${s.id}: ${s.speechSeconds.toFixed(1)}s speech, ${s.parts} part(s), ${s.words} words, transcript ${s.transcribedIn}ms, voice ${s.voiceIn ?? '-'}ms after release`);
-        send(this.host, { t: 'turn', ...s });
+        const turn = withRoomId(s);
+        console.log(`[${this.code}] turn ${turn.id}: ${s.speechSeconds.toFixed(1)}s speech, ${s.parts} part(s), ${s.words} words, transcript ${s.transcribedIn}ms, voice ${s.voiceIn ?? '-'}ms after release`);
+        send(this.host, { t: 'turn', ...turn });
       },
       audio: (buf) => {
         if (this.turnVoice.length < 3000) this.turnVoice.push(buf);
@@ -177,7 +210,7 @@ class Room {
 
   end() {
     this.stopEngine();
-    this.releaseFloor();
+    this.releaseFloor({ discard: true });
     this.broadcast({ t: 'ended' });
     for (const ws of this.listeners.keys()) ws.close(1000, 'ended');
     this.ended = true;
@@ -204,7 +237,7 @@ class Room {
       } catch {}
     });
     ws.on('close', () => {
-      if (this.reply?.ws === ws) this.releaseFloor();
+      if (this.reply?.ws === ws) this.releaseFloor({ discard: true });
       this.listeners.delete(ws);
       this.sendState();
     });
@@ -219,44 +252,53 @@ class Room {
 
   // ---- replies: one team member at a time speaks Spanish, the host hears English ----
   takeFloor(ws) {
+    const host = this.host;
+    if (host?.readyState !== WebSocket.OPEN) return send(ws, { t: 'error', message: 'Espera a que vuelva el presentador.' });
     if (this.reply) return send(ws, { t: 'error', message: 'Otra persona está hablando.' });
     const missing = engineProblems(this.engineName);
     if (missing.length) return send(ws, { t: 'error', message: 'Las respuestas no están configuradas.' });
     const name = this.listeners.get(ws)?.name || 'Equipo';
     const tag = `r${++this.replyCount}-`;
+    const reply = { ws, name, discarded: false };
+    // A provider may finish after the phone disconnects or a different host window takes over.
+    const deliver = (callback) => (value) => {
+      if (!reply.discarded && !this.ended && this.host === host) callback(value);
+    };
     const engine = createEngine(
       this.engineName,
       {
-        caption: (c) => this.onCaption({ ...c, id: tag + c.id }, name),
-        cue: (c) => this.onCue({ ...c, id: tag + c.id }, name, 'host'),
-        cueLength: (c) => this.broadcast({ t: 'cuelen', ...c, id: tag + c.id, to: 'host' }),
-        audio: (buf) => {
+        caption: deliver((c) => this.onCaption({ ...c, id: tag + c.id }, name)),
+        cue: deliver((c) => this.onCue({ ...c, id: tag + c.id }, name, 'host')),
+        cueLength: deliver((c) => this.broadcast({ t: 'cuelen', ...c, id: tag + c.id, to: 'host' })),
+        audio: deliver((buf) => {
           // Replies are spoken to the host only.
-          this.replyAudioUntil = Math.max(this.replyAudioUntil, Date.now()) + (buf.length / 2 / config.sampleRate) * 1000 + 300;
+          this.replyAudioUntil = Math.max(this.replyAudioUntil, Date.now()) + (buf.length / 2 / config.sampleRate) * 1000;
           if (this.host?.readyState === WebSocket.OPEN) this.host.send(buf, { binary: true });
-        },
-        error: (message) => {
+        }),
+        error: deliver((message) => {
           console.error(`[${this.code}] reply: ${message}`);
           send(this.host, { t: 'error', message: `Reply: ${message}` });
-        },
+        }),
       },
       'es-en'
     );
     engine.setMode('ptt');
     engine.start();
-    this.reply = { ws, engine, name };
+    reply.engine = engine;
+    this.reply = reply;
     this.replyTimer = setTimeout(() => this.releaseFloor(), 60_000);
     this.sendState();
   }
 
-  releaseFloor() {
+  releaseFloor({ discard = false } = {}) {
     if (!this.reply) return;
     clearTimeout(this.replyTimer);
     const { engine } = this.reply;
+    this.reply.discarded = discard;
     this.reply = null;
-    engine.flush();
-    engine.stop().catch(() => {});
-    this.sendState();
+    if (!discard) engine.flush();
+    engine.stop({ discard }).catch(() => {});
+    if (!discard) this.sendState(); // disconnect, takeover and end publish their own state
   }
 
   // ---- fan-out ----

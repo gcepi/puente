@@ -60,7 +60,44 @@ function start(code, name, withAudio) {
   const reveal = { en: new Revealer(en), es: new Revealer(es) };
   let online = false;
   let live = false;
+  let hostConnected = false;
+  let floor = null;
+  let reply = null;
+  let openingMic = false;
+  let interrupted = false;
+  let notice = '';
+  let noticeUntil = 0;
+  const talkBtn = $('#talkBtn');
   const paint = () => ($('#dot').className = `dot ${live ? 'live' : online ? 'online' : ''}`);
+
+  function paintTalk() {
+    const busy = floor && floor !== (name || 'Equipo');
+    talkBtn.disabled = !online || !hostConnected || openingMic || !!reply?.tail || !!busy;
+    talkBtn.classList.toggle('down', !!reply?.mic && !reply.tail);
+    if (!online) talkBtn.textContent = 'Sin conexión';
+    else if (!hostConnected) talkBtn.textContent = 'Esperando al presentador…';
+    else if (busy) talkBtn.textContent = `Habla: ${floor}`;
+    else if (openingMic) talkBtn.textContent = 'Abriendo el micrófono…';
+    else if (reply?.tail) talkBtn.textContent = 'Enviando…';
+    else if (reply?.mic) talkBtn.textContent = '🔴 Hablando… toca para enviar';
+    else if (Date.now() < noticeUntil) talkBtn.textContent = notice;
+    else talkBtn.textContent = interrupted ? '🎤 Toca para repetir tu respuesta' : '🎤 Toca para responder';
+  }
+
+  function clearReply() {
+    if (!reply) return;
+    clearTimeout(reply.tail);
+    reply.mic?.stop();
+    reply = null;
+  }
+
+  function interruptReply() {
+    if (!reply) return;
+    interrupted = true;
+    // The host can leave while the listener socket is still open. Release its floor.
+    if (online && reply.mic) conn.send({ t: 'talk', down: false });
+    clearReply();
+  }
 
   player.setEnabled(withAudio);
   $('#audioBtn').setAttribute('aria-pressed', String(withAudio));
@@ -71,16 +108,23 @@ function start(code, name, withAudio) {
       onOpen: () => conn.send({ t: 'audio', on: player.enabled }),
       onStatus: (s) => {
         online = s === 'online';
+        if (!online) {
+          hostConnected = false;
+          live = false;
+          floor = null;
+          interruptReply();
+        }
         if (s === 'offline') $('#title').textContent = `Junta ${code} · reconectando…`;
         if (s === 'online') $('#title').textContent = `Junta ${code}`;
         paint();
+        paintTalk();
       },
       onGone: (code) => {
+        $('#talkbar').classList.add('hidden');
         if (code === 4001) {
           // This phone opened the meeting in a newer tab; go quiet so the voice never plays twice.
           player.setEnabled(false);
           player.keeper?.pause();
-          $('#talkbar').classList.add('hidden');
           $('#title').textContent = 'Abierta en otra pestaña';
           return;
         }
@@ -98,15 +142,25 @@ function start(code, name, withAudio) {
           reveal[m.lang]?.add(m, m.to === 'listeners' ? player.startIn() : null);
         } else if (m.t === 'state') {
           live = m.live;
+          hostConnected = m.hostConnected;
           floor = m.floor;
+          if (!hostConnected) interruptReply();
+          // The server also releases a reply when its one-minute limit expires.
+          else if (reply?.hadFloor && !floor) clearReply();
+          else if (reply?.mic && floor === (name || 'Equipo')) reply.hadFloor = true;
           paintTalk();
           paint();
         } else if (m.t === 'error') {
+          clearReply();
           notice = m.message;
           noticeUntil = Date.now() + 3000;
           paintTalk();
           setTimeout(paintTalk, 3100);
         } else if (m.t === 'ended') {
+          hostConnected = false;
+          clearReply();
+          paintTalk();
+          $('#talkbar').classList.add('hidden');
           $('#title').textContent = 'La junta terminó';
         }
       },
@@ -114,26 +168,6 @@ function start(code, name, withAudio) {
     }
   );
 
-  // ---- hold to reply in Spanish; the host hears English ----
-  let floor = null;
-  let talking = false;
-  let mic = null;
-  const talkBtn = $('#talkBtn');
-  let notice = '';
-  let noticeUntil = 0;
-  const paintTalk = () => {
-    if (talking) return;
-    if (Date.now() < noticeUntil) {
-      talkBtn.disabled = false;
-      talkBtn.classList.remove('down');
-      talkBtn.textContent = notice;
-      return;
-    }
-    const busy = floor && floor !== (name || 'Equipo');
-    talkBtn.disabled = !!busy;
-    talkBtn.classList.remove('down');
-    talkBtn.textContent = busy ? `Habla: ${floor}` : '🎤 Toca para responder';
-  };
   if (micPossible()) {
     $('#live').classList.add('can-talk');
     $('#talkbar').classList.remove('hidden');
@@ -141,40 +175,45 @@ function start(code, name, withAudio) {
   // Tap to start, tap again to send. (A long press gets cancelled by iOS.)
   const startTalk = async () => {
     audioContext(); // Safari/iOS: start audio inside the tap, before any await
-    talking = true;
-    talkBtn.classList.add('down');
-    talkBtn.textContent = '🔴 Hablando… toca para enviar';
+    const attempt = { mic: null, tail: null, hadFloor: false };
+    reply = attempt;
+    openingMic = true;
+    interrupted = false;
+    noticeUntil = 0;
+    paintTalk();
     player.skip(); // don't talk over the voice
     try {
-      mic = await openMic((pcm) => talking && conn.send(pcm));
-      // Claim the floor only once the mic is really open.
+      const mic = await openMic((pcm) => {
+        if (reply === attempt && attempt.mic) conn.send(pcm);
+      });
+      // Permission may arrive after the connection or the meeting is gone.
+      if (reply !== attempt) {
+        mic.stop();
+        return;
+      }
+      attempt.mic = mic;
       conn.send({ t: 'talk', down: true });
-      if (!talking) stopTalk(true);
     } catch (e) {
-      talking = false;
+      if (reply !== attempt) return;
+      clearReply();
       notice = micHelp(e, 'es');
       noticeUntil = Date.now() + 12000;
-      paintTalk();
       setTimeout(paintTalk, 12100);
-    }
-  };
-  const stopTalk = (force) => {
-    if (!talking && !force) return;
-    const m = mic;
-    mic = null;
-    talkBtn.textContent = 'Enviando…';
-    // Keep the last syllable: stop sending a beat after the tap.
-    setTimeout(() => {
-      talking = false;
-      m?.stop();
-      conn.send({ t: 'talk', down: false });
+    } finally {
+      openingMic = false;
       paintTalk();
-    }, 400);
+    }
   };
   talkBtn.addEventListener('click', () => {
     if (talkBtn.disabled) return;
-    if (!talking) startTalk();
-    else if (mic) stopTalk();
+    if (!reply) return startTalk();
+    // Keep the last syllable. Disconnecting cancels this timer before a new socket opens.
+    reply.tail = setTimeout(() => {
+      clearReply();
+      conn.send({ t: 'talk', down: false });
+      paintTalk();
+    }, 400);
+    paintTalk();
   });
 
   $('#audioBtn').onclick = async () => {

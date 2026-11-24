@@ -1,58 +1,38 @@
-# Go live in about an hour (no command line)
+# Set up a Puente meeting on Render
 
-You'll do five things in a browser. Paste keys only into Render's dashboard, never into chat or a file.
+## Configure push-to-talk
 
-## 1. Repo (1 min)
+If Puente already runs on Render, open the service's **Environment** tab and check these settings. For a new deployment, choose **New → Blueprint** in Render, select `gcepi/puente`, and enter `OPENAI_API_KEY` and `HOST_PASSCODE` when prompted. Enter provider keys in the dashboard.
 
-On GitHub, create a new **private** repository named `puente` under `gcepi`. Leave it **empty**: no README, no license. Tell Claude it exists, and Claude will push the code.
+| Setting | How Puente uses it |
+|---|---|
+| `ENGINE=turn` | Push-to-talk. Select **Push to talk, then it repeats in Spanish** on the host page. |
+| `HOST_PASSCODE` | Protects the host controls. Crew members join with the three-digit room code. |
+| `OPENAI_API_KEY` | Required for transcription. OpenAI also translates by default and provides the backup voice. |
+| `ANTHROPIC_API_KEY` | Optional. Setting this key selects Claude for translation in push-to-talk mode. |
+| `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` | Set both to use your cloned voice for Spanish. Copy the voice ID from your ElevenLabs voice library. |
+| `ELEVENLABS_REPLY_VOICE_ID` | Optional separate voice for English replies. When empty, crew replies use the same ElevenLabs voice as the manager. |
+| `ELEVENLABS_MODEL` | Defaults to `eleven_flash_v2_5` (Flash v2.5). |
+| `TTS_SPEED` | Controls speaking pace for the clone and default OpenAI backup. Render uses its existing value, or `1.15` if unset. The local example sets `1.08`. Keep the current value to preserve your pace. |
 
-## 2. API keys (20–30 min)
+The blueprint uses Render's free plan. If your service sleeps between meetings, open the host page ahead of time and wait for the mode selector to load.
 
-Start with OpenAI. It alone runs Engine A and the OpenAI voice.
+## Test with two devices
 
-| Service | Where | Notes |
-|---|---|---|
-| **OpenAI** (required) | platform.openai.com → Settings → Billing (add ~$10) → API keys → Create | Powers Engine A and the OpenAI voice |
-| Deepgram (Engine B) | console.deepgram.com → sign up → API Keys | New accounts usually get free credit |
-| Anthropic (Engine B) | console.anthropic.com → Billing (add ~$5) → API Keys | Claude does the translation |
-| ElevenLabs (optional) | elevenlabs.io → Voices → Voice Library, filter Spanish / Mexico, add one → copy its Voice ID; Profile → API key | Only if the OpenAI voice isn't good enough |
+1. Open the service's HTTPS address followed by `/host` on your laptop. Select **Demo**, start a session, and scan the QR code with a phone. On the phone, tap **Entrar con voz**. Hold the host's talk button, then release. Check for scripted captions and a tone in the phone's earbuds.
+2. End the demo, start a **Push to talk** session, and rejoin on the phone. Hold **Hold to talk** or the Space bar while speaking, then release. Try “Hessel, please check unit 204B at 3:15.” Compare the name, unit and time in the captions and the Spanish voice.
+3. On the phone, tap **Toca para responder**, allow microphone access, speak a correction in Spanish, and tap again to send it. Check the English caption and voice on the host. Try speaking another turn after the reply.
+4. For a missed phrase, play **What it heard** and **Voice it sent** after a completed turn and before speaking again. The **voice after** time starts when the server receives the release and ends when it starts sending voice. The brief pause that captures your last syllable, network transit and phone playback add to the wait you hear.
 
-Copy each key into a password manager as you go.
+## During the meeting
 
-## 3. Deploy on Render (10 min)
+Keep earbuds connected and screens on. Listeners who prefer captions can choose **Solo texto**. Speak in short turns and pause for replies. Ask a crew member to repeat back safety-critical instructions and confirm any unit number or time before acting.
 
-1. Go to render.com and **sign in with GitHub**.
-2. Click **New → Blueprint** and choose `gcepi/puente`. Render reads `render.yaml`.
-3. It asks for exactly two values:
-   - `OPENAI_API_KEY`: paste your key.
-   - `HOST_PASSCODE`: make up something short. Only someone with it can *start* a meeting, which keeps strangers from spending your OpenAI credit. Joining only needs the room code.
-4. Click **Apply** and wait about 2–3 minutes for the build. Your address appears at the top, like `https://puente-xxxx.onrender.com`.
+Anyone with the standing room code can join an active meeting and see recent captions, including replies. Use **End meeting** when finished. Download any transcript you need first. A server restart clears the room and its history.
 
-The blueprint starts on Render's **free** plan (no card needed). Free sleeps after 15 idle minutes and takes about a minute to wake. Before your first real meeting, switch it to **Starter ($7/mo)**: Settings → Instance Type.
+## Other settings
 
-## 4. Smoke test (10 min)
-
-1. On your laptop, open `https://…onrender.com/host`. Pick **Demo** and start. On your phone, scan the QR code and tap *Entrar con voz*. You should see scripted captions and hear a tone "voice". That proves rooms, captions, and audio on your phone.
-2. End it. Start again with **Push to talk, then it repeats in Spanish**. Hold the big button (or Space), say a sentence, and release. English, then Spanish, appear and the Spanish voice plays on your phone.
-3. Try replying: on the phone, tap *Toca para responder*, say a sentence in Spanish, and tap again to send.
-
-Note anything odd, especially on iPhone: silent switch on/off, screen dimming, Bluetooth vs. wired earbuds. Send the notes to Claude.
-
-## 5. First real meeting
-
-- You: wear an earbud (to hear replies) and use a clip-on mic if you have one.
-- Crew: earbuds in, screen on. Text-only works too.
-- Speak in short paragraphs and pause between points.
-- For anything safety-related, ask someone to repeat it back.
-
-## Settings you might tune later (Render → Environment)
-
-| Setting | Default | What it does |
-|---|---|---|
-| `ENGINE` | `openai-translate` | Default engine (the host can still pick per meeting) |
-| `ENDPOINTING_MS` | `700` | Pause that ends a phrase in "When I pause" mode. Lower is faster and choppier. |
-| `TTS_PROVIDER` | `openai` | `elevenlabs` for a chosen Mexican voice |
-| `TTS_SPEED` | `1.08` | Voice speed (ElevenLabs) |
-| `MAX_SESSION_MINUTES` | `120` | Auto-stop safety for cost |
-
-Glossary: edit `server/glossary.json` (or ask Claude to). It feeds both speech recognition and translation.
+- The optional pipeline needs `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY` and the chosen voice provider's credentials. `TTS_PROVIDER` selects its voice provider (`openai` or `elevenlabs`). Push-to-talk uses the ElevenLabs key and voice ID described above.
+- `ENDPOINTING_MS` controls pause detection in the pipeline and defaults to `700`.
+- `MAX_SESSION_MINUTES` defaults to `120` and limits how long the host engine runs.
+- Edit `server/glossary.json` to supply name spellings and preferred translations for the team's trade terms.

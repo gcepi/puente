@@ -208,44 +208,45 @@ export async function openMic(onFrame, onLevel) {
   // so the voice ignores the silent switch, but 'playback' forbids the microphone and
   // getUserMedia fails without ever asking. Switch to play-and-record first.
   setAudioSession('play-and-record');
-  let stream;
+  let stream, src, node, mute;
+  function stop() {
+    stream?.getTracks().forEach((t) => t.stop());
+    if (node) node.port.onmessage = null;
+    src?.disconnect();
+    node?.disconnect();
+    mute?.disconnect();
+    setAudioSession('playback');
+  }
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-  } catch (e) {
-    if (e.name !== 'OverconstrainedError' && e.name !== 'TypeError') {
-      setAudioSession('playback');
-      throw e;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    } catch (e) {
+      if (e.name !== 'OverconstrainedError' && e.name !== 'TypeError') throw e;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     }
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!ctx.__micWorklet) {
+      await ctx.audioWorklet.addModule('/js/mic-worklet.js');
+      ctx.__micWorklet = true;
+    }
+    src = ctx.createMediaStreamSource(stream);
+    node = new AudioWorkletNode(ctx, 'mic-capture');
+    node.port.onmessage = ({ data }) => {
+      onLevel?.(data.level);
+      onFrame(data.pcm);
+    };
+    src.connect(node);
+    // Keep the graph pulling audio without playing the mic back out loud.
+    mute = ctx.createGain();
+    mute.gain.value = 0;
+    node.connect(mute).connect(ctx.destination);
+    if (ctx.state !== 'running') await ctx.resume();
+    return { stop };
+  } catch (e) {
+    stop();
+    throw e;
   }
-  if (!ctx.__micWorklet) {
-    await ctx.audioWorklet.addModule('/js/mic-worklet.js');
-    ctx.__micWorklet = true;
-  }
-  const src = ctx.createMediaStreamSource(stream);
-  const node = new AudioWorkletNode(ctx, 'mic-capture');
-  node.port.onmessage = ({ data }) => {
-    onLevel?.(data.level);
-    onFrame(data.pcm);
-  };
-  src.connect(node);
-  // Keep the graph pulling audio without playing the mic back out loud.
-  const mute = ctx.createGain();
-  mute.gain.value = 0;
-  node.connect(mute).connect(ctx.destination);
-  if (ctx.state !== 'running') await ctx.resume();
-  return {
-    stop() {
-      stream.getTracks().forEach((t) => t.stop());
-      node.port.onmessage = null;
-      src.disconnect();
-      node.disconnect();
-      mute.disconnect();
-      setAudioSession('playback');
-    },
-  };
 }
 
 /** iOS 17+ Audio Session API; a no-op elsewhere. */
