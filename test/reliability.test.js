@@ -35,6 +35,55 @@ test('a stuck request never blocks the turns after it', async () => {
   assert.deepEqual(spoken, ['ES turn 2.'], 'the second turn still went through');
 });
 
+for (const delayed of ['transcription', 'translation', 'voice']) {
+  test(`a skipped turn stays silent when its ${delayed} eventually finishes`, async () => {
+    const events = [];
+    let finish;
+    const pending = new Promise((resolve) => { finish = resolve; });
+    let n = 0;
+    const engine = new TurnEngine(
+      {
+        caption: (c) => events.push(['caption', c]),
+        cue: (c) => events.push(['cue', c]),
+        audio: (b) => events.push(['audio', b.length]),
+        stats: (s) => events.push(['stats', s.id]),
+        error: (e) => events.push(['error', e]),
+      },
+      {
+        transcribe: async () => {
+          const text = ++n === 1 ? 'old' : 'new';
+          if (delayed === 'transcription' && text === 'old') await pending;
+          return text;
+        },
+        translate: async (text, context, onDelta) => {
+          if (delayed === 'translation' && text === 'old') await pending;
+          const translation = `${text} one. ${text} two.`;
+          onDelta(translation);
+          return translation;
+        },
+        speak: async (text, onAudio) => {
+          events.push(['synthesize', text]);
+          if (delayed === 'voice' && text === 'old one.') await pending;
+          onAudio(Buffer.alloc(4800));
+        },
+      },
+      { turnTimeoutMs: 30 }
+    );
+    for (let i = 0; i < 2; i++) {
+      engine.audio(tone(1));
+      engine.flush();
+    }
+    await engine.chain;
+    assert.equal(events.filter(([kind]) => kind === 'error').length, 1);
+    assert.deepEqual(events.filter(([kind]) => kind === 'stats'), [['stats', 't1']]);
+    const before = events.length;
+    finish();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(events.slice(before), []);
+    assert.deepEqual(engine.context.map((c) => c.src), ['new']);
+  });
+}
+
 // ---- transcription safety nets, with OpenAI's API mocked ----
 function mockFetch(replies) {
   const calls = [];
@@ -70,12 +119,12 @@ test('a normal transcript is not redone', async () => {
   assert.equal(calls.length, 1);
 });
 
-test('names are sent as spelling hints, and a hint echoed back on silence is dropped', async () => {
+test('an unconfirmed echo of the name hints requests a repeat', async () => {
   const calls = mockFetch({ 'gpt-4o-mini-transcribe': ['Hessel, Dwell Communities.'], 'whisper-1': [''] });
-  const text = await make()(tone(1), 'en', 0.3);
+  await assert.rejects(make()(tone(1), 'en', 0.3), /repeat that turn/);
   globalThis.fetch = realFetch;
-  assert.equal(text, '');
   assert.equal(calls[0].prompt, 'Hessel, Dwell Communities.');
+  assert.equal(calls[1].prompt, null);
 });
 
 test('a server error or dropped connection is retried once', async () => {

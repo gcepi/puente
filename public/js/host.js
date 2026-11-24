@@ -55,6 +55,8 @@ async function setup() {
 
   $('#setupForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    // Unlock English reply audio inside the start gesture, even if the crew speaks first.
+    if (!player.ctx) player.unlock().catch(() => {});
     $('#setupErr').textContent = '';
     const r = await fetch('/api/rooms', {
       method: 'POST',
@@ -103,8 +105,11 @@ function run(s) {
   $('#monSmaller').onclick = () => resizeMon(-4);
   $('#monBigger').onclick = () => resizeMon(4);
   let mic = null;
+  let openingMic = false;
+  let online = false;
   let talking = false;
   let tailUntil = 0;
+  let releaseTimer = null;
   let dropped = 0;
   let frames = 0; // frames this page sent during the current press, checked by the server
 
@@ -113,14 +118,15 @@ function run(s) {
     {
       onOpen: () => conn.send({ t: 'mode', mode: 'ptt' }),
       onStatus: (st) => {
+        online = st === 'online';
+        $('#pttBtn').disabled = !online;
+        if (st === 'offline' || st === 'gone') stopCapture();
         if (st === 'offline') $('#hostErr').textContent = 'Connection lost. Reconnecting…';
         if (st === 'online') $('#hostErr').textContent = '';
       },
       onGone: (code) => {
         if (code === 4001) {
           // Another host window took over. Stop here instead of fighting it for the meeting.
-          mic?.stop();
-          mic = null;
           $('#hostErr').innerHTML = 'This meeting is now open in another window. <button class="icon-btn" id="takeBack">Use it here</button>';
           $('#takeBack').onclick = () => {
             $('#hostErr').textContent = '';
@@ -222,11 +228,30 @@ function run(s) {
   // ---- push to talk: hold, speak, release; the Spanish voice repeats it ----
   const pb = $('#pttBtn');
   const paint = () => {
-    pb.classList.toggle('down', talking);
-    $('#pttLabel').textContent = talking ? 'Listening… release to translate' : 'Hold to talk';
+    pb.classList.toggle('down', talking && !!mic);
+    $('#pttLabel').textContent = !talking ? 'Hold to talk'
+      : mic ? 'Listening… release to translate' : 'Opening microphone… wait to speak';
   };
+  function finishTurn() {
+    clearTimeout(releaseTimer);
+    releaseTimer = null;
+    tailUntil = 0;
+    conn.send({ t: 'ptt', down: false, dropped, frames });
+  }
+  function stopCapture() {
+    clearTimeout(releaseTimer);
+    releaseTimer = null;
+    tailUntil = 0;
+    talking = false;
+    stopLive();
+    mic?.stop();
+    mic = null;
+    paint();
+    $('#meter').style.width = '0%';
+  }
   async function down() {
-    if (talking) return;
+    if (!online || talking) return;
+    if (releaseTimer !== null) finishTurn();
     audioContext(); // Safari: start audio inside the tap, before any await
     if (!player.ctx) player.unlock().catch(() => {});
     talking = true;
@@ -235,44 +260,46 @@ function run(s) {
     dropped = 0;
     frames = 0;
     $('#turnInfo').textContent = '';
-    conn.send({ t: 'ptt', down: true });
-    startLive();
     if (!mic) {
+      // The browser can leave the permission prompt open indefinitely. A later
+      // press shares the outstanding request, and an idle result is closed.
+      if (openingMic) return;
+      openingMic = true;
       try {
-        mic = await Promise.race([
-          openMic(
-            (pcm) => {
-              if (!talking && Date.now() >= tailUntil) return;
-              // Only a badly stalled connection drops audio, and the host is told.
-              if (conn.buffered < 4 * 1024 * 1024) conn.send(pcm);
-              else dropped++;
-              frames++;
-            },
-            (level) => ($('#meter').style.width = `${talking ? Math.min(100, level * 400) : 0}%`)
-          ),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('it did not start within 5 seconds; check the browser allows the microphone for this site')), 5000)),
-        ]);
+        const opened = await openMic((pcm) => {
+          if (!mic || (!talking && Date.now() >= tailUntil)) return;
+          if (conn.buffered < 4 * 1024 * 1024) conn.send(pcm);
+          else dropped++;
+          frames++;
+        }, (level) => ($('#meter').style.width = `${talking && mic ? Math.min(100, level * 400) : 0}%`));
+        if (!talking) {
+          opened.stop();
+          return;
+        }
+        mic = opened;
         $('#hostErr').textContent = '';
       } catch (e) {
         talking = false;
         paint();
-        conn.send({ t: 'ptt', down: false });
-        $('#hostErr').textContent = micHelp(e, 'en');
+        if (online) $('#hostErr').textContent = micHelp(e, 'en');
+        return;
+      } finally {
+        openingMic = false;
       }
     }
+    conn.send({ t: 'ptt', down: true });
+    paint();
+    startLive();
   }
   function up() {
     if (!talking) return;
     talking = false;
     paint();
+    if (!mic) return;
     stopLive();
     // Keep the last syllable: send a beat of audio after release.
     tailUntil = Date.now() + 250;
-    setTimeout(() => {
-      conn.send({ t: 'ptt', down: false, dropped, frames });
-      dropped = 0;
-      frames = 0;
-    }, 250);
+    releaseTimer = setTimeout(finishTurn, 250);
   }
   pb.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -291,7 +318,7 @@ function run(s) {
 
   $('#endBtn').onclick = () => {
     if (!confirm('End the meeting for everyone? Download the transcript first if you need it.')) return;
-    mic?.stop();
+    stopCapture();
     conn.send({ t: 'end' });
     store.set('puente.session', '');
     setTimeout(() => location.reload(), 300);

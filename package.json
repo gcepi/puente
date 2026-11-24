@@ -18,5 +18,8 @@
   "engines": {
     "node": ">=20"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
 }

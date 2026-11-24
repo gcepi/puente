@@ -3,19 +3,10 @@
 // both languages and translated voice audio reach them.
 // Run: npm run test:e2e   (screenshots land in test/screenshots/)
 import { spawn } from 'node:child_process';
-import { createRequire } from 'node:module';
+import { chromium, devices } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-const require = createRequire(import.meta.url);
-let playwright;
-try {
-  playwright = require('playwright');
-} catch {
-  playwright = require('/opt/node-tools/node_modules/playwright');
-}
-const { chromium, devices } = playwright;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const shots = path.join(here, 'screenshots');
@@ -25,7 +16,10 @@ const BASE = `http://localhost:${PORT}`;
 
 const server = spawn('node', ['server/index.js'], {
   cwd: path.join(here, '..'),
-  env: { ...process.env, PORT: String(PORT), ENGINE: 'mock', HOST_PASSCODE: '' },
+  env: {
+    ...process.env, PORT: String(PORT), ENGINE: 'mock', HOST_PASSCODE: '', ROOM_CODE: '750',
+    OPENAI_API_KEY: '', ANTHROPIC_API_KEY: '', DEEPGRAM_API_KEY: '',
+  },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
 await new Promise((r) => server.stdout.once('data', r));
@@ -42,6 +36,12 @@ try {
   // Host on a laptop-sized screen.
   const hostCtx = await browser.newContext({ viewport: { width: 1280, height: 860 }, permissions: ['microphone'] });
   const host = await hostCtx.newPage();
+  const presses = [];
+  host.on('websocket', (ws) => ws.on('framesent', ({ payload }) => {
+    if (typeof payload !== 'string') return;
+    const msg = JSON.parse(payload);
+    if (msg.t === 'ptt') presses.push(msg.down);
+  }));
   host.on('pageerror', (e) => fail(`host page error: ${e.message}`));
   await host.goto(`${BASE}/host`);
   await host.click('button[type=submit]');
@@ -68,6 +68,32 @@ try {
   await l2.waitForSelector('#live:not(.hidden)');
 
   await host.waitForSelector('#who:text("2 listening")', { timeout: 5000 });
+
+  // Simulate a first visit where permission takes longer than five seconds.
+  await host.evaluate(() => {
+    const media = navigator.mediaDevices;
+    const getMedia = media.getUserMedia.bind(media);
+    const permission = new Promise((resolve) => { window.allowMic = resolve; });
+    window.micRequests = 0;
+    media.getUserMedia = async (constraints) => {
+      window.micRequests++;
+      await permission;
+      const stream = await getMedia(constraints);
+      window.lastMicTrack = stream.getAudioTracks()[0];
+      return stream;
+    };
+  });
+  await host.keyboard.down('Space');
+  await host.waitForSelector('#pttLabel:text("Opening microphone")');
+  await host.keyboard.up('Space');
+  await host.keyboard.down('Space');
+  await host.waitForTimeout(5100);
+  if ((await host.textContent('#pttLabel')).includes('Listening') || presses.length) fail('claimed to listen before microphone permission');
+  await host.keyboard.up('Space');
+  await host.evaluate(() => window.allowMic());
+  await host.waitForFunction(() => window.lastMicTrack?.readyState === 'ended');
+  if ((await host.evaluate(() => window.micRequests)) !== 1) fail('opened duplicate microphone requests');
+  console.log('late microphone permission cleaned up without an empty turn');
 
   // Push to talk: nothing happens until the host holds the button.
   const hold = async (page, sel, ms) => {
@@ -152,6 +178,13 @@ try {
   await host.waitForSelector('#takeBack', { timeout: 5000 });
   let flips = 0;
   host2.on('websocket', () => flips++);
+  // The crew speaks first on this host. Starting the meeting should be enough to hear the reply.
+  await l1b.click('#talkBtn');
+  await host2.waitForSelector('#who:text("is replying")');
+  await l1b.waitForTimeout(1500);
+  await l1b.click('#talkBtn');
+  await host2.waitForFunction(() => window.__puente.player.stats.seconds > 0);
+  console.log('new host heard the crew before touching its mic');
   await host2.waitForTimeout(3000);
   if (flips) fail(`host windows kept trading the meeting (${flips} reconnects)`);
   const before = await l1b.$$eval('#enPane .line', (n) => n.length);
@@ -177,6 +210,18 @@ try {
   await l3.click('#joinText');
   await l3.waitForFunction(() => document.querySelectorAll('#esPane .line').length >= 2, null, { timeout: 5000 });
   console.log('late joiner got history');
+
+  // Re-press before the audio tail expires. The old release must precede the new press.
+  const start = presses.length;
+  await host.keyboard.down('Space');
+  await host.waitForSelector('#pttLabel:text("Listening")');
+  await host.keyboard.up('Space');
+  await host.keyboard.down('Space');
+  await host.waitForTimeout(300);
+  await host.keyboard.up('Space');
+  await host.waitForTimeout(350);
+  if (JSON.stringify(presses.slice(start)) !== '[true,false,true,false]') fail('quick presses mixed turn boundaries');
+  console.log('back-to-back press and release events kept in order');
 
   if (!process.exitCode) console.log('E2E PASS');
 } catch (e) {

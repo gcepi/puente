@@ -2,6 +2,8 @@
 
 *Live English → Mexican Spanish meeting translation for a property manager and a maintenance crew. Written 2026-11-23.*
 
+This original design brief predates the default push-to-talk engine. Its model choices, timing and cost estimates, voice settings and screen descriptions reflect that earlier design. For the current behavior and setup, see the [README](../README.md) and [meeting setup guide](SETUP.md).
+
 ## Bottom line
 
 - **Build it.** The engine you're picturing already exists as an API. In May 2026 OpenAI shipped `gpt-realtime-translate`, a model built to interpret speech while the speaker is still talking, for about $2 an hour. The rest is glue: rooms, a QR code, captions, audio playback on phones. That glue is now built and tested.

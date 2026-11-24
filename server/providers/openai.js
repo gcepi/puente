@@ -35,26 +35,34 @@ const norm = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\
 /**
  * Speech to text with safety nets:
  * - every request has a time limit and is retried once on a network or server error;
- * - names are given as spelling hints, and a transcript that is just the hint echoed back is dropped;
+ * - suspicious echoes of the name hints are checked against the same audio without hints;
  * - if the transcript is far too short for the amount of speech (a known failure of the
  *   gpt-4o transcribe models on long audio with pauses), it is redone with whisper-1 and
  *   the longer transcript is kept.
  */
 export function createOpenAiTranscriber({ apiKey, model, fallbackModel = 'whisper-1', names = [], log = () => {} }) {
   const hint = names.length ? `${names.join(', ')}.` : '';
-  const hintWords = new Set(norm(hint).split(' ').filter(Boolean));
+  const nameList = norm(hint);
+  const wholeNames = new Set(names.map(norm));
+  const hintWords = new Set(nameList.split(' ').filter(Boolean));
   const isEcho = (text) => {
-    const words = norm(text).split(' ').filter(Boolean);
+    if (!nameList) return false;
+    // The model sometimes prints this wrapper around all or part of its spelling prompt.
+    if (/\bcontext(?:o)?\s*:\s*#{2,}/iu.test(text)) return true;
+    const normalized = norm(text);
+    if (wholeNames.has(normalized)) return false; // Someone can answer with a single property or company.
+    if (wholeNames.size > 1 && ` ${normalized} `.includes(` ${nameList} `)) return true;
+    const words = norm(text.replace(/^\s*(?:context|contexto)\s*:/i, '')).split(' ').filter(Boolean);
     return words.length > 1 && words.every((w) => hintWords.has(w));
   };
 
-  async function once(pcm, language, m) {
+  async function once(pcm, language, m, prompt) {
     const form = new FormData();
     form.append('file', new Blob([pcmToWav(pcm)], { type: 'audio/wav' }), 'turn.wav');
     form.append('model', m);
     form.append('language', language);
     form.append('response_format', 'json');
-    if (hint) form.append('prompt', hint);
+    if (prompt) form.append('prompt', prompt);
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}` },
@@ -62,36 +70,45 @@ export function createOpenAiTranscriber({ apiKey, model, fallbackModel = 'whispe
       signal: AbortSignal.timeout(25_000),
     });
     const json = await check(res, `OpenAI transcription (${m})`);
-    const text = (json.text ?? '').trim();
-    return isEcho(text) ? '' : text;
+    return (json.text ?? '').trim();
   }
 
-  async function withRetry(pcm, language, m) {
+  async function withRetry(pcm, language, m, prompt) {
     try {
-      return await once(pcm, language, m);
+      return await once(pcm, language, m, prompt);
     } catch (e) {
       if (/ 4\d\d:/.test(e.message) && !/ 429:/.test(e.message)) throw e; // bad request: retrying won't help
-      return once(pcm, language, m);
+      return once(pcm, language, m, prompt);
     }
   }
 
   return async function transcribe(pcm, language, voicedSecs = 0) {
+    // All second opinions use the audio alone, so the same hint cannot bias both attempts.
+    const recheck = () => withRetry(pcm, language, fallbackModel || model, '');
+    const repeat = 'Could not confirm what was said. Please repeat that turn. / Por favor, repite lo que dijiste.';
     let text;
     try {
-      text = await withRetry(pcm, language, model);
+      text = await withRetry(pcm, language, model, hint);
     } catch (e) {
       // The main model refused or kept failing: use the fallback rather than lose the turn.
       if (!fallbackModel || fallbackModel === model) throw e;
       log(`${model} failed (${e.message}); using ${fallbackModel}`);
-      return withRetry(pcm, language, fallbackModel);
+      const alt = await recheck();
+      if (isEcho(alt)) throw new Error(repeat);
+      return alt;
+    }
+    if (isEcho(text)) {
+      const alt = await recheck().catch(() => '');
+      if (!alt || isEcho(alt)) throw new Error(repeat);
+      return alt;
     }
     const words = countWords(text);
     const tooShort = voicedSecs >= 0.8 && (words === 0 || (voicedSecs >= 2 && words < voicedSecs));
     if (tooShort && fallbackModel && fallbackModel !== model) {
       try {
-        const alt = await withRetry(pcm, language, fallbackModel);
+        const alt = await recheck();
         log(`transcript check: ${voicedSecs.toFixed(1)}s of speech gave ${words} words; ${fallbackModel} gave ${countWords(alt)}`);
-        if (countWords(alt) > words) text = alt;
+        if (!isEcho(alt) && countWords(alt) > words) text = alt;
       } catch (e) {
         log(`fallback transcription failed: ${e.message}`);
       }
@@ -132,23 +149,48 @@ export function createOpenAiTranslator({ apiKey, model, fallbackModel, glossary,
     // Server-sent events: lines of "data: {json}", ending with "data: [DONE]".
     let out = '';
     let pending = '';
+    let done = false;
+    const readLine = (line) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) return;
+      const data = trimmed.slice(5).trim();
+      if (!data) return;
+      if (data === '[DONE]') {
+        done = true;
+        return;
+      }
+      let event;
+      try {
+        event = JSON.parse(data);
+      } catch {
+        throw new Error('Translation service sent an unreadable response. Please repeat the turn.');
+      }
+      if (event?.error || event?.type === 'error') {
+        throw new Error('Translation service reported an error. Please repeat the turn.');
+      }
+      const choice = event?.choices?.[0];
+      if (choice?.delta?.refusal || (choice?.finish_reason && choice.finish_reason !== 'stop')) {
+        throw new Error('The translation stopped before it was complete. Please repeat the turn.');
+      }
+      if (choice?.delta?.content) {
+        out += choice.delta.content;
+        onDelta?.(choice.delta.content);
+      }
+    };
     const decoder = new TextDecoder();
     for await (const chunk of res.body) {
       pending += decoder.decode(chunk, { stream: true });
       const lines = pending.split('\n');
       pending = lines.pop();
       for (const line of lines) {
-        const data = line.trim().replace(/^data:\s*/, '');
-        if (!data || data === '[DONE]' || !line.trim().startsWith('data:')) continue;
-        try {
-          const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-          if (delta) {
-            out += delta;
-            onDelta?.(delta);
-          }
-        } catch {}
+        readLine(line);
+        if (done) break;
       }
+      if (done) break;
     }
+    if (!done) readLine(pending + decoder.decode());
+    if (!done) throw new Error('The translation connection closed early. Please repeat the turn.');
+    if (!out.trim()) throw new Error('No translation came back. Please repeat the turn.');
     return out.trim();
   };
 }

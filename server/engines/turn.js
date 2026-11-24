@@ -172,16 +172,22 @@ export class TurnEngine {
     this.chain = this.chain
       .then(() => {
         let timer;
+        const turn = { id, stats, expired: false };
         const watchdog = new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error('That turn took too long and was skipped. Please say it again.')), this.turnTimeoutMs);
+          timer = setTimeout(() => {
+            turn.expired = true;
+            reject(new Error('That turn took too long and was skipped. Please say it again.'));
+          }, this.turnTimeoutMs);
         });
-        return Promise.race([this.process(id, parts, stats), watchdog]).finally(() => clearTimeout(timer));
+        return Promise.race([this.process(turn, parts), watchdog]).finally(() => clearTimeout(timer));
       })
       .catch((e) => this.hooks.error(e.message));
   }
 
-  async process(id, parts, stats = {}) {
+  async process(turn, parts) {
+    const { id, stats } = turn;
     const results = await Promise.all(parts);
+    if (turn.expired) return;
     stats.transcribedIn = Date.now() - (stats.releasedAt ?? Date.now());
     const failed = results.find((r) => r.error);
     if (failed) {
@@ -195,37 +201,41 @@ export class TurnEngine {
     }
     this.hooks.caption({ lang: this.src, id, text, final: true });
     stats.words = (text.match(/[\p{L}\p{N}']+/gu) ?? []).length;
-    this.firstVoiceStats = stats;
 
     // Translate the whole turn as a stream. Each finished sentence starts its voice right away
     // (up to 3 in parallel) and is sent in order once fully generated, so playback never stutters.
     let speech = Promise.resolve();
     const splitter = new SentenceSplitter((sentence) => {
-      const audio = this.synth(sentence);
-      speech = speech.then(() => this.send(id, sentence, audio));
+      const audio = this.synth(turn, sentence);
+      speech = speech.then(() => this.send(turn, sentence, audio));
     });
     let out;
     try {
-      out = await this.deps.translate(text, this.context.slice(-4), (d) => splitter.push(d));
+      out = await this.deps.translate(text, this.context.slice(-4), (d) => {
+        if (!turn.expired) splitter.push(d);
+      });
     } catch (e) {
       const label = this.dst === 'es' ? '(sin traducción)' : '(no translation)';
       await speech;
+      if (turn.expired) return;
       this.hooks.cue({ id, lang: this.dst, text: `${label} ${text}`, seconds: 0, last: true });
       throw e;
     }
+    if (turn.expired) return;
     splitter.end(out);
     await speech;
+    if (turn.expired) return;
     this.hooks.cue({ id, lang: this.dst, text: '', seconds: 0, last: true });
     this.context.push({ src: text, dst: out });
     this.hooks.stats?.({ id, ...stats });
   }
 
   /** Generate one sentence's voice in full, retrying once. At most 3 run at the same time. */
-  async synth(sentence) {
+  async synth(turn, sentence) {
     while (this.synthRunning >= 3) await new Promise((r) => this.synthWaiters.push(r));
     this.synthRunning++;
     try {
-      for (let attempt = 1; ; attempt++) {
+      for (let attempt = 1; !turn.expired; attempt++) {
         const chunks = [];
         try {
           await this.deps.speak(sentence, (b) => chunks.push(b));
@@ -244,21 +254,24 @@ export class TurnEngine {
    * Send one sentence: its text with the exact audio length, then all of its audio at once.
    * Phones reveal the words in step with the voice.
    */
-  async send(id, sentence, pending) {
-    const { audio, error } = await pending;
+  async send(turn, sentence, pending) {
+    const result = await pending;
+    if (turn.expired) return;
+    const { audio, error } = result;
+    const { id, stats } = turn;
     if (error) this.hooks.error(`Voice: ${error.message}`);
     if (!audio?.length) {
       this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: 0, last: false }); // still show the words
       return;
     }
-    const s = this.firstVoiceStats;
-    if (s && s.releasedAt && s.voiceIn == null) s.voiceIn = Date.now() - s.releasedAt;
+    if (stats.voiceIn == null) stats.voiceIn = Date.now() - stats.releasedAt;
     this.hooks.cue({ id, lang: this.dst, text: sentence, seconds: audio.length / 2 / RATE, last: false });
     for (let o = 0; o < audio.length; o += 9600) this.hooks.audio(audio.subarray(o, o + 9600));
   }
 
-  async stop() {
-    this.flush();
+  async stop({ discard = false } = {}) {
+    if (discard) this.reset();
+    else this.flush();
     await this.chain;
   }
 }
