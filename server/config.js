@@ -31,6 +31,10 @@ export const config = {
   port: num('PORT', 3000),
   publicUrl: env('PUBLIC_URL', ''), // e.g. https://puente.onrender.com — used for the QR code
   hostPasscode: env('HOST_PASSCODE', ''), // empty = anyone can start a session
+  // Standing room code: every meeting uses this 3-digit code, so the crew always joins
+  // the same way (and a printed QR code keeps working). Set ROOM_CODE=random for a
+  // fresh random code per meeting.
+  roomCode: /^\d{3}$/.test(env('ROOM_CODE', '750')) ? env('ROOM_CODE', '750') : '',
   // Which engine translates: mock | openai-translate | pipeline
   engine: env('ENGINE', 'mock'),
   maxSessionMinutes: num('MAX_SESSION_MINUTES', 120),

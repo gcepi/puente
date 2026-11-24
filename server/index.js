@@ -88,7 +88,7 @@ const server = http.createServer(async (req, res) => {
     const room = createRoom(engine);
     const joinUrl = `${origin(req)}/j/${room.code}`;
     const qrSvg = await QRCode.toString(joinUrl, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
-    return json(res, 200, { code: room.code, hostToken: room.hostToken, joinUrl, qrSvg, engine });
+    return json(res, 200, { code: room.code, hostToken: room.hostToken, joinUrl, qrSvg, engine: room.engineName });
   }
 
   const tm = p.match(/^\/api\/rooms\/(\d{3})\/transcript$/);

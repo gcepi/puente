@@ -17,7 +17,17 @@ function newCode() {
 }
 
 export function createRoom(engineName = config.engine) {
-  const room = new Room(newCode(), crypto.randomBytes(16).toString('hex'), engineName);
+  if (config.roomCode) {
+    // Standing room: reuse the live one so connected listeners stay put.
+    const existing = rooms.get(config.roomCode);
+    if (existing && !existing.ended) {
+      if (!existing.engine) existing.engineName = engineName;
+      return existing;
+    }
+    if (existing) rooms.delete(config.roomCode);
+  }
+  const code = config.roomCode || newCode();
+  const room = new Room(code, crypto.randomBytes(16).toString('hex'), engineName);
   rooms.set(room.code, room);
   return room;
 }
