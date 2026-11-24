@@ -21,7 +21,7 @@ const store = {
 };
 
 const LABELS = {
-  mock: 'Demo (no keys, fake voice)',
+  mock: 'Demo (practice, no real translation)',
   turn: 'Push to talk, then it repeats in Spanish',
   'openai-translate': 'OpenAI live interpreter (talks while you talk)',
   pipeline: 'Glossary + chosen voice (most control)',
@@ -30,21 +30,18 @@ const LABELS = {
 async function setup() {
   const cfg = await fetch('/api/config').then((r) => r.json());
   const sel = $('#engine');
-  for (const e of cfg.engines) {
+  // Only modes that are ready to use; setup details stay out of the way.
+  // The live interpreter talks over the speaker, so it isn't offered here.
+  for (const e of cfg.engines.filter((x) => !x.missing.length && x.name !== 'openai-translate')) {
     const o = document.createElement('option');
     o.value = e.name;
-    o.textContent = LABELS[e.name] + (e.missing.length ? ' — needs keys' : '');
-    o.disabled = e.missing.length > 0;
+    o.textContent = LABELS[e.name];
     sel.appendChild(o);
   }
   const saved = store.get('puente.engine.v2');
   const usable = cfg.engines.filter((e) => !e.missing.length).map((e) => e.name);
   sel.value = [saved, 'turn', cfg.engine, 'mock'].find((n) => usable.includes(n));
-  const missingNote = cfg.engines
-    .filter((e) => e.missing.length)
-    .map((e) => `${LABELS[e.name].split(' (')[0]}: add ${e.missing.join(', ')}`)
-    .join(' · ');
-  $('#engineNote').textContent = missingNote;
+  $('#engineNote').textContent = cfg.voice ? `Spanish voice: ${cfg.voice}` : '';
   if (cfg.passcodeRequired) $('#passWrap').classList.remove('hidden');
   $('#passcode').value = store.get('puente.pass') || '';
 

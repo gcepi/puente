@@ -10,6 +10,42 @@ import { createElevenLabsTts, createOpenAiTts } from '../providers/tts.js';
 
 export const ENGINES = ['turn', 'openai-translate', 'pipeline', 'mock'];
 
+export const voiceName = () => (config.elevenKey && config.elevenVoiceId ? 'ElevenLabs' : 'OpenAI');
+
+/**
+ * The voice for the push-to-talk engine: ElevenLabs when its keys are set, with the
+ * OpenAI voice as an automatic backup so a refused request never means silence.
+ */
+function voiceFor(dst, hooks) {
+  const openai = createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst, speed: config.ttsSpeed });
+  if (voiceName() !== 'ElevenLabs') return openai;
+  const eleven = createElevenLabsTts({
+    apiKey: config.elevenKey,
+    voiceId: dst === 'es' ? config.elevenVoiceId : config.elevenReplyVoiceId || config.elevenVoiceId,
+    model: config.elevenModel,
+    speed: config.ttsSpeed,
+    language: dst,
+  });
+  return withBackupVoice(eleven, openai, (e) => hooks.error(`ElevenLabs voice failed (${e.message.slice(0, 120)}); used the OpenAI voice.`));
+}
+
+export function withBackupVoice(primary, backup, onFallback) {
+  let warned = false;
+  return async function speak(text, onAudio) {
+    const chunks = [];
+    try {
+      await primary(text, (b) => chunks.push(b));
+    } catch (e) {
+      if (!warned) {
+        warned = true; // say it once per turn engine, not once per sentence
+        onFallback(e);
+      }
+      return backup(text, onAudio);
+    }
+    for (const c of chunks) onAudio(c);
+  };
+}
+
 /**
  * @param {string} name engine name
  * @param {{caption:Function, audio:Function, error:Function}} hooks
@@ -40,17 +76,7 @@ export function createEngine(name, hooks, direction = 'en-es') {
           log: (m) => console.log(`[transcribe] ${m}`),
         }),
         translate,
-        // ElevenLabs gives the most natural, consistent voice when its keys are set.
-        speak:
-          config.elevenKey && config.elevenVoiceId
-            ? createElevenLabsTts({
-                apiKey: config.elevenKey,
-                voiceId: dst === 'es' ? config.elevenVoiceId : config.elevenReplyVoiceId || config.elevenVoiceId,
-                model: config.elevenModel,
-                speed: config.ttsSpeed,
-                language: dst,
-              })
-            : createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst, speed: config.ttsSpeed }),
+        speak: voiceFor(dst, hooks),
       },
       { src, dst, speed: config.ttsSpeed }
     );

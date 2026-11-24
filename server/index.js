@@ -7,7 +7,7 @@ import { WebSocketServer } from 'ws';
 import QRCode from 'qrcode';
 import { config, engineProblems } from './config.js';
 import { createRoom, getRoom } from './room.js';
-import { ENGINES } from './engines/index.js';
+import { ENGINES, voiceName } from './engines/index.js';
 import { pcmToWav } from './providers/openai.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -77,6 +77,7 @@ const server = http.createServer(async (req, res) => {
       engine: config.engine,
       engines: ENGINES.map((name) => ({ name, missing: engineProblems(name) })),
       passcodeRequired: !!config.hostPasscode,
+      voice: voiceName(),
     });
   }
 
