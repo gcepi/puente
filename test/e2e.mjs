@@ -1,9 +1,11 @@
 // End-to-end check with the mock engine: a host with a fake microphone starts a
-// session, two phone-sized listeners join by code, and we confirm captions in
+// session, two phone-sized listeners join by link, and we confirm captions in
 // both languages and translated voice audio reach them.
 // Run: npm run test:e2e   (screenshots land in test/screenshots/)
 import { spawn } from 'node:child_process';
 import { chromium, devices } from 'playwright';
+import assert from 'node:assert/strict';
+import QRCode from 'qrcode';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,11 +15,12 @@ const shots = path.join(here, 'screenshots');
 fs.mkdirSync(shots, { recursive: true });
 const PORT = 3999;
 const BASE = `http://localhost:${PORT}`;
+const standingRoom = '817'; // Exercise the configured room, independent of the production default.
 
 const server = spawn('node', ['server/index.js'], {
   cwd: path.join(here, '..'),
   env: {
-    ...process.env, PORT: String(PORT), ENGINE: 'mock', HOST_PASSCODE: '', ROOM_CODE: '750',
+    ...process.env, PORT: String(PORT), ENGINE: 'mock', HOST_PASSCODE: '', ROOM_CODE: standingRoom, PUBLIC_URL: BASE,
     OPENAI_API_KEY: '', ANTHROPIC_API_KEY: '', DEEPGRAM_API_KEY: '',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
@@ -33,6 +36,32 @@ const browser = await chromium.launch({
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
 });
 try {
+  const phone = devices['Pixel 7'];
+  async function crewPhone() {
+    const context = await browser.newContext({ ...phone, permissions: ['microphone'] });
+    await context.addInitScript(() => {
+      const media = navigator.mediaDevices;
+      const getMedia = media.getUserMedia.bind(media);
+      window.micRequests = 0;
+      media.getUserMedia = (...args) => { window.micRequests++; return getMedia(...args); };
+    });
+    return context;
+  }
+
+  // A crew member can open the public link before the meeting and retry the same button later.
+  const l2Ctx = await crewPhone();
+  const l2 = await l2Ctx.newPage();
+  await l2.goto(BASE);
+  const entry = l2.locator('#joinForm button');
+  assert.equal(await entry.count(), 1, 'one bilingual join action');
+  assert.match(await entry.textContent(), /Enter Meeting/i);
+  assert.match(await entry.textContent(), /Entrar a la reunión/i);
+  assert.equal(await l2.locator('#code').count(), 0, 'no room code to type');
+  await entry.click();
+  await l2.getByText(/Todavía no hay una reunión activa/i).waitFor();
+  assert.equal(await l2.locator('#live').isVisible(), false);
+  assert.equal(await l2.evaluate(() => window.micRequests), 0);
+
   // Host on a laptop-sized screen.
   const hostCtx = await browser.newContext({ viewport: { width: 1280, height: 860 }, permissions: ['microphone'] });
   const host = await hostCtx.newPage();
@@ -45,29 +74,43 @@ try {
   host.on('pageerror', (e) => fail(`host page error: ${e.message}`));
   await host.goto(`${BASE}/host`);
   await host.click('button[type=submit]');
-  await host.waitForSelector('#roomCode:not(:text("---"))');
-  const code = (await host.textContent('#roomCode')).trim();
+  await host.waitForFunction(() => document.querySelector('#joinUrl')?.textContent.includes('/j/'));
+  const joinUrl = (await host.textContent('#joinUrl')).trim();
+  const code = new URL(joinUrl).pathname.split('/').at(-1);
+  assert.equal(joinUrl, `${BASE}/j/${standingRoom}`);
+  const expectedQr = await QRCode.toString(joinUrl, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+  const qrMatchesLink = await host.locator('#qr svg').evaluate((qr, expected) => {
+    const compare = new DOMParser().parseFromString(expected, 'image/svg+xml');
+    return qr.querySelector('path[stroke]').getAttribute('d') === compare.querySelector('path[stroke]').getAttribute('d');
+  }, expectedQr);
+  assert.ok(qrMatchesLink, 'the QR encodes the displayed meeting-specific join URL');
   console.log(`room ${code}`);
 
-  // Two listeners on phones: one with voice, one text only.
-  const phone = devices['Pixel 7'];
-  const l1Ctx = await browser.newContext({ ...phone, permissions: ['microphone'] });
+  // A link for a different room must never silently join the live standing room.
+  const l1Ctx = await crewPhone();
   const l1 = await l1Ctx.newPage();
   l1.on('pageerror', (e) => fail(`listener page error: ${e.message}`));
-  await l1.goto(`${BASE}/j/${code}`);
+  await l1.goto(`${BASE}/j/999`);
+  await l1.click('#joinAudio');
+  await l1.getByText(/Esta reunión no está activa/i).waitFor();
+  assert.equal(await l1.locator('#live').isVisible(), false);
+  await l1.goto(joinUrl);
   await l1.screenshot({ path: path.join(shots, 'listener-join.png') });
   await l1.fill('#name', 'Pedro');
   await l1.click('#joinAudio');
   await l1.waitForSelector('#live:not(.hidden)');
-
-  const l2Ctx = await browser.newContext({ ...phone });
-  const l2 = await l2Ctx.newPage();
-  await l2.goto(BASE);
-  await l2.fill('#code', code);
-  await l2.click('#joinText');
+  assert.equal(l1.url(), joinUrl);
+  const lookup = l2.waitForResponse((res) => new URL(res.url()).pathname === '/api/rooms/current');
+  await entry.click();
+  assert.equal((await (await lookup).json()).code, code, 'public link resolves the active standing room');
   await l2.waitForSelector('#live:not(.hidden)');
-
   await host.waitForSelector('#who:text("2 listening")', { timeout: 5000 });
+  for (const listener of [l1, l2]) {
+    assert.equal(await listener.evaluate(() => window.micRequests), 0, 'hearing the manager does not open the crew microphone');
+    assert.equal(await listener.getAttribute('#audioBtn', 'aria-pressed'), 'true', 'voice starts enabled');
+  }
+  await l2.click('#audioBtn');
+  assert.equal(await l2.getAttribute('#audioBtn', 'aria-pressed'), 'false', 'voice can be muted in the meeting');
 
   // Simulate a first visit where permission takes longer than five seconds.
   await host.evaluate(() => {
@@ -135,9 +178,11 @@ try {
   if ((await l1.$$eval('#enPane .line', (n) => n.length)) !== idle) fail('audio leaked while the button was up');
   console.log('push-to-talk turns delivered');
 
-  // Reply: listener 1 holds the talk button and speaks Spanish; the host sees and hears English.
+  // The crew microphone opens only when a listener taps to reply.
   await l1.click('#talkBtn');
   await host.waitForSelector('#who:text("Pedro is replying")', { timeout: 5000 });
+  assert.equal(await l1.evaluate(() => window.micRequests), 1);
+  assert.equal(await l2.evaluate(() => window.micRequests), 0);
   const l2Talk = await l2.$('#talkBtn');
   if (l2Talk && (await l2Talk.isVisible()) && !(await l2Talk.isDisabled())) fail('second listener could talk over the first');
   await l1.waitForTimeout(3600);
@@ -163,7 +208,7 @@ try {
 
   // A second tab on the same phone replaces the first, so the voice never plays twice.
   const l1b = await l1Ctx.newPage();
-  await l1b.goto(`${BASE}/j/${code}`);
+  await l1b.goto(joinUrl);
   await l1b.click('#joinAudio');
   await l1.waitForSelector('#title:text("Abierta en otra pestaña")', { timeout: 5000 });
   if (await l1.evaluate(() => window.__puente.player.enabled)) fail('old tab still plays the voice');
@@ -174,7 +219,7 @@ try {
   const host2 = await hostCtx.newPage();
   await host2.goto(`${BASE}/host`);
   await host2.click('button[type=submit]');
-  await host2.waitForSelector('#roomCode:text("750")');
+  await host2.waitForFunction((url) => document.querySelector('#joinUrl')?.textContent === url, joinUrl);
   await host.waitForSelector('#takeBack', { timeout: 5000 });
   let flips = 0;
   host2.on('websocket', () => flips++);
@@ -195,7 +240,7 @@ try {
   console.log('second host window took over cleanly, and "Use it here" takes it back');
 
   await host.screenshot({ path: path.join(shots, 'host.png') });
-  await l1.screenshot({ path: path.join(shots, 'listener-live.png') });
+  await l1b.screenshot({ path: path.join(shots, 'listener-live.png') });
 
   // Transcript download works for the host.
   const href = await host.getAttribute('#transcriptBtn', 'href');
@@ -206,8 +251,8 @@ try {
 
   // A late joiner sees recent history.
   const l3 = await (await browser.newContext({ ...phone })).newPage();
-  await l3.goto(`${BASE}/j/${code}`);
-  await l3.click('#joinText');
+  await l3.goto(joinUrl);
+  await l3.click('#joinAudio');
   await l3.waitForFunction(() => document.querySelectorAll('#esPane .line').length >= 2, null, { timeout: 5000 });
   console.log('late joiner got history');
 
@@ -223,6 +268,14 @@ try {
   if (JSON.stringify(presses.slice(start)) !== '[true,false,true,false]') fail('quick presses mixed turn boundaries');
   console.log('back-to-back press and release events kept in order');
 
+  host.once('dialog', (dialog) => dialog.accept());
+  await host.click('#endBtn');
+  await l2.getByText('La junta terminó').waitFor();
+  await l2.goto(BASE);
+  await l2.click('#joinAudio');
+  await l2.getByText(/Todavía no hay una reunión activa/i).waitFor();
+  assert.equal(await l2.locator('#live').isVisible(), false);
+  console.log('public entry handles meetings that have not started or have ended');
   if (!process.exitCode) console.log('E2E PASS');
 } catch (e) {
   fail(e.stack || e.message);

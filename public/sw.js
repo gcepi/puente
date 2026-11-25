@@ -1,14 +1,14 @@
-const CACHE = 'puente-shell-v2';
+const CACHE = 'puente-shell-v3';
 // Only public files are stored. Conversation audio, captions, credentials and API responses stay out.
 const FILES = [
-  '/', '/styles.css', '/js/listen.js', '/js/common.js', '/js/player.js', '/icon.svg', '/manifest.webmanifest',
+  '/', '/styles.css', '/js/listen.js', '/js/common.js', '/js/player.js', '/icon.svg', '/manifest.webmanifest', '/host.webmanifest',
   '/solo-offline.html', '/solo.webmanifest', '/solo-icon-192.png', '/solo-icon-512.png', '/solo-touch-icon.png',
 ];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.delete('puente-v1').then(() => self.clients.claim()));
+  event.waitUntil(Promise.all([caches.delete('puente-v1'), caches.delete('puente-shell-v2')]).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', (event) => {
   const { request } = event;

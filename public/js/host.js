@@ -82,7 +82,6 @@ function run(s) {
   $('#setup').classList.add('hidden');
   $('#host').classList.remove('hidden');
   $('#host').classList.add('on');
-  $('#roomCode').textContent = s.code;
   $('#qr').innerHTML = s.qrSvg;
   $('#joinUrl').textContent = s.joinUrl;
   $('#engineName').textContent = LABELS[s.engine]?.split(' (')[0] ?? s.engine;
@@ -326,3 +325,4 @@ function run(s) {
 }
 
 setup();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});

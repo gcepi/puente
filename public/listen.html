@@ -14,17 +14,13 @@
   <main id="join" class="center">
     <form class="card" id="joinForm" autocomplete="off">
       <h1 class="brand">Pu<span>e</span>nte</h1>
-      <p class="sub">Traducción en vivo · Live translation</p>
-      <label>Código de la junta
-        <input id="code" class="code" maxlength="3" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required placeholder="123" />
-      </label>
+      <p class="sub">Traducción en vivo · <span lang="en">Live translation</span></p>
       <label>Tu nombre (opcional)
         <input id="name" maxlength="40" placeholder="Ej. Pedro" />
       </label>
-      <button class="btn" id="joinAudio" type="submit">🎧 Entrar con voz</button>
-      <button class="btn secondary" id="joinText" type="button">Solo texto</button>
-      <p class="err" id="joinErr"></p>
-      <p class="tip">Conecta tus audífonos y deja la pantalla encendida durante la junta.</p>
+      <button class="btn" id="joinAudio" type="submit">Entrar a la reunión<br><span lang="en">Enter Meeting</span></button>
+      <p class="err" id="joinErr" role="status"></p>
+      <p class="tip">Usa audífonos para escuchar. Puedes silenciar la voz durante la reunión.</p>
     </form>
   </main>
 
@@ -32,7 +28,8 @@
     <header class="bar">
       <span class="dot" id="dot"></span>
       <span class="title" id="title">Puente</span>
-      <button class="icon-btn" id="audioBtn" aria-pressed="true" title="Voz">🔊</button>
+      <a class="tip hidden" id="backToJoin" href="/">Volver al inicio</a>
+      <button class="icon-btn" id="audioBtn" aria-pressed="true" aria-label="Voz de la traducción" title="Silenciar voz">🔊</button>
       <button class="icon-btn" id="smaller" title="Letra más chica">A−</button>
       <button class="icon-btn" id="bigger" title="Letra más grande">A+</button>
     </header>

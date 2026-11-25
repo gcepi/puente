@@ -138,9 +138,10 @@ const server = http.createServer(async (req, res) => {
     return res.end(pcmToWav(pcm));
   }
 
-  const rm = p.match(/^\/api\/rooms\/(\d{3})$/);
+  const rm = p.match(/^\/api\/rooms\/(\d{3}|current)$/);
   if (rm) {
-    const room = getRoom(rm[1]);
+    // The landing page joins the standing meeting. Random rooms require their own invite links.
+    const room = getRoom(rm[1] === 'current' ? config.roomCode : rm[1]);
     return room && !room.ended ? json(res, 200, { code: room.code }) : json(res, 404, { error: 'No such session' });
   }
 
