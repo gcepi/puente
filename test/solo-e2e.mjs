@@ -77,8 +77,21 @@ try {
   ]);
   let page = await launchPhone();
   await page.goto(`${base}/host`);
-  assert.ok(await page.locator('a[href="/solo"]').first().isVisible(), 'host can discover solo');
+  const hostManifestHref = await page.locator('link[rel="manifest"]').getAttribute('href');
+  const hostManifest = await (await context.request.get(new URL(hostManifestHref, base).href)).json();
+  assert.equal(hostManifest.id, '/host');
+  assert.equal(hostManifest.start_url, '/host');
+  assert.equal(hostManifest.display, 'standalone');
+  assert.equal(await page.locator('meta[name="apple-mobile-web-app-title"]').getAttribute('content'), 'Puente Host');
+  await context.close();
+  page = await launchPhone();
+  await page.goto(new URL(hostManifest.start_url, base).href);
+  const oneOnOne = page.locator('#setup a[href="/solo"]');
+  await oneOnOne.waitFor();
+  await oneOnOne.click();
+  await page.locator('#auth').waitFor();
   await page.goto(base);
+  assert.equal(await page.locator('link[rel="manifest"]').getAttribute('href'), '/manifest.webmanifest');
   assert.equal(await page.locator('a[href="/solo"]').count(), 0, 'no host link on crew join page');
   await page.goto(`${base}/solo`);
   await page.locator('#auth').waitFor({ state: 'visible' });
@@ -95,7 +108,7 @@ try {
   assert.equal(launchUrl.pathname, '/solo');
   assert.equal(manifest.display, 'standalone');
 
-  // Keep a separate meeting open with a text-only crew member; both turns must stay private.
+  // Keep a separate meeting open with a crew member; both turns must stay private.
   const crewContext = await context.browser().newContext();
   const roomResponse = await context.request.post(`${base}/api/rooms`, { data: { engine: 'mock', passcode } });
   assert.ok(roomResponse.ok());
@@ -103,7 +116,7 @@ try {
   const crew = await crewContext.newPage();
   await crew.goto(`${base}/j/${room.code}`);
   assert.equal(await crew.locator('a[href="/solo"]').count(), 0);
-  await crew.click('#joinText');
+  await crew.click('#joinAudio');
   await crew.locator('#live').waitFor({ state: 'visible' });
   const outsider = await crewContext.newPage();
   await outsider.goto(`${base}/solo`);

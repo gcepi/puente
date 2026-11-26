@@ -19,7 +19,6 @@ function deviceId() {
 window.__puente = { player }; // for tests and on-device debugging
 
 const pathCode = location.pathname.match(/^\/j\/(\d{3})$/)?.[1];
-if (pathCode) $('#code').value = pathCode;
 try {
   $('#name').value = localStorage.getItem('puente.name') || '';
 } catch {}
@@ -34,26 +33,40 @@ const applySize = () => {
 };
 applySize();
 
-async function join(withAudio) {
-  const code = $('#code').value.replace(/\D/g, '');
+async function join() {
+  const button = $('#joinAudio');
+  if (button.disabled) return;
+  button.disabled = true;
   const name = $('#name').value.trim();
-  $('#joinErr').textContent = '';
-  if (!/^\d{3}$/.test(code)) return ($('#joinErr').textContent = 'El código tiene 3 números.');
-  // Unlock audio first, while we are still inside the tap.
-  if (withAudio) await player.unlock().catch(() => {});
-  const r = await fetch(`/api/rooms/${code}`).catch(() => null);
-  if (!r?.ok) return ($('#joinErr').textContent = 'No encontramos esa junta. Revisa el código.');
+  $('#joinErr').textContent = 'Buscando la reunión…';
+  // Request playback inside the tap; captions can start even if the phone delays audio.
+  if (!player.ctx) player.unlock().catch(() => {});
+  else {
+    audioContext();
+    player.keeper?.play().catch(() => {});
+  }
+  const r = await fetch(`/api/rooms/${pathCode || 'current'}`, { cache: 'no-store' }).catch(() => null);
+  const room = r?.ok ? await r.json().catch(() => null) : null;
+  if (!/^\d{3}$/.test(room?.code) || (pathCode && room.code !== pathCode)) {
+    let message = 'No pudimos conectar. Revisa tu conexión y vuelve a intentarlo.';
+    if (r?.status === 404) message = pathCode
+      ? 'Esta reunión no está activa. Vuelve a intentarlo cuando empiece o escanea el QR que muestre el presentador.'
+      : 'Todavía no hay una reunión activa. Vuelve a intentarlo cuando empiece o escanea el QR del presentador.';
+    $('#joinErr').textContent = message;
+    player.keeper?.pause();
+    button.disabled = false;
+    return;
+  }
   try {
     localStorage.setItem('puente.name', name);
   } catch {}
-  history.replaceState(null, '', `/j/${code}`);
-  start(code, name, withAudio);
+  start(room.code, name);
 }
 
-function start(code, name, withAudio) {
+function start(code, name) {
   $('#join').classList.add('hidden');
   $('#live').classList.remove('hidden');
-  $('#title').textContent = `Junta ${code}`;
+  $('#title').textContent = 'Reunión';
   keepAwake();
   const en = new CaptionPane($('#enPane'));
   const es = new CaptionPane($('#esPane'));
@@ -99,9 +112,6 @@ function start(code, name, withAudio) {
     clearReply();
   }
 
-  player.setEnabled(withAudio);
-  $('#audioBtn').setAttribute('aria-pressed', String(withAudio));
-
   const conn = connect(
     { role: 'listen', room: code, name, device: deviceId() },
     {
@@ -114,8 +124,8 @@ function start(code, name, withAudio) {
           floor = null;
           interruptReply();
         }
-        if (s === 'offline') $('#title').textContent = `Junta ${code} · reconectando…`;
-        if (s === 'online') $('#title').textContent = `Junta ${code}`;
+        if (s === 'offline') $('#title').textContent = 'Reunión · reconectando…';
+        if (s === 'online') $('#title').textContent = 'Reunión';
         paint();
         paintTalk();
       },
@@ -129,6 +139,7 @@ function start(code, name, withAudio) {
           return;
         }
         $('#title').textContent = 'La junta terminó';
+        $('#backToJoin').classList.remove('hidden');
       },
       onMessage: (m) => {
         if (m.t === 'cap') {
@@ -220,6 +231,8 @@ function start(code, name, withAudio) {
     if (!player.ctx) await player.unlock().catch(() => {});
     player.setEnabled(!player.enabled);
     $('#audioBtn').setAttribute('aria-pressed', String(player.enabled));
+    $('#audioBtn').textContent = player.enabled ? '🔊' : '🔇';
+    $('#audioBtn').title = player.enabled ? 'Silenciar voz' : 'Activar voz';
     conn.send({ t: 'audio', on: player.enabled });
   };
   const resize = (d) => {
@@ -235,8 +248,7 @@ function start(code, name, withAudio) {
 
 $('#joinForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  join(true);
+  join();
 });
-$('#joinText').addEventListener('click', () => join(false));
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
