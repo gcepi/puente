@@ -60,7 +60,8 @@ export const config = {
   ttsProvider: env('TTS_PROVIDER', 'elevenlabs'),
   elevenKey: env('ELEVENLABS_API_KEY', ''),
   elevenVoiceId: env('ELEVENLABS_VOICE_ID', ''),
-  elevenReplyVoiceId: env('ELEVENLABS_REPLY_VOICE_ID', ''), // English voice for replies; defaults to the Spanish one
+  elevenSpanishVoiceId: env('ELEVENLABS_SPANISH_VOICE_ID', ''),
+  elevenReplyVoiceId: env('ELEVENLABS_REPLY_VOICE_ID', ''),
   elevenModel: env('ELEVENLABS_MODEL', 'eleven_flash_v2_5'),
   // Speaking pace; 1 = normal. Tolerates '1.15x'. Kept between 0.8 and 1.4.
   ttsSpeed: Math.min(1.4, Math.max(0.8, parseFloat(env('TTS_SPEED', '1.15')) || 1.15)),

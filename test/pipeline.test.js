@@ -110,9 +110,19 @@ test('a translation failure shows the English instead of going silent', async ()
   assert.match(out.errors[0], /boom/);
 });
 
-test('system prompt carries the glossary and Mexican Spanish rules', () => {
-  const p = buildSystemPrompt({ terms: [{ en: 'make-ready', es: 'preparación de unidad' }] });
-  assert.match(p, /Mexican Spanish/);
-  assert.match(p, /"make-ready" → "preparación de unidad"/);
-  assert.match(p, /do not answer it/);
+test('meeting and Solo prompts keep regional wording, respectful address, and the directional glossary', () => {
+  const glossary = { terms: [{ en: 'make-ready', es: 'preparación de unidad' }], names: [{ name: 'Hessel' }] };
+  for (const oneOnOne of [false, true]) {
+    const spanish = buildSystemPrompt(glossary, 'en-es', oneOnOne);
+    assert.match(spanish, /neutral Latin American Spanish/);
+    assert.match(spanish, /Mexican Spanish trade vocabulary/);
+    assert.match(spanish, oneOnOne ? /singular address \("usted"\)/ : /"ustedes" when the speaker addresses the team/);
+    assert.match(spanish, /"make-ready" → "preparación de unidad"/);
+    assert.match(spanish, /Hessel/);
+    assert.match(spanish, /do not answer it/);
+    const english = buildSystemPrompt(glossary, 'es-en', oneOnOne);
+    assert.match(english, /spoken American English/);
+    assert.match(english, /"preparación de unidad" → "make-ready"/);
+    assert.doesNotMatch(english, /neutral Latin American Spanish/);
+  }
 });

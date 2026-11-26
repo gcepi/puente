@@ -1,6 +1,6 @@
 # Puente
 
-Live English → Mexican Spanish translation for in-person meetings. The speaker talks. Everyone else scans a QR code and gets **captions and a natural voice** on their own phone, with earbuds. Crew members can **tap to reply in Spanish**, and the speaker hears English.
+Live English → Latin American Spanish translation for in-person meetings, with Mexican maintenance terms from the team's glossary. The speaker talks. Everyone else scans a QR code and gets **captions and a natural voice** on their own phone, with earbuds. Crew members can **tap to reply in Spanish**, and the speaker hears English.
 
 Works on iPhone and Android as a web page. No app, no accounts for listeners.
 
