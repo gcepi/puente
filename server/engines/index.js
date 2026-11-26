@@ -12,6 +12,17 @@ export const ENGINES = ['turn', 'openai-translate', 'pipeline', 'mock'];
 
 export const voiceName = () => (config.elevenKey && config.elevenVoiceId ? 'ElevenLabs' : 'OpenAI');
 
+function elevenVoiceFor(dst) {
+  const override = dst === 'es' ? config.elevenSpanishVoiceId : config.elevenReplyVoiceId;
+  return createElevenLabsTts({
+    apiKey: config.elevenKey,
+    voiceId: override || config.elevenVoiceId,
+    model: config.elevenModel,
+    speed: config.ttsSpeed,
+    language: dst,
+  });
+}
+
 /**
  * The voice for the push-to-talk engine: ElevenLabs when its keys are set, with the
  * OpenAI voice as an automatic backup so a refused request never means silence.
@@ -19,13 +30,7 @@ export const voiceName = () => (config.elevenKey && config.elevenVoiceId ? 'Elev
 function voiceFor(dst, hooks) {
   const openai = createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst, speed: config.ttsSpeed });
   if (voiceName() !== 'ElevenLabs') return openai;
-  const eleven = createElevenLabsTts({
-    apiKey: config.elevenKey,
-    voiceId: dst === 'es' ? config.elevenVoiceId : config.elevenReplyVoiceId || config.elevenVoiceId,
-    model: config.elevenModel,
-    speed: config.ttsSpeed,
-    language: dst,
-  });
+  const eleven = elevenVoiceFor(dst);
   return withBackupVoice(eleven, openai, (e) => hooks.error(`ElevenLabs voice failed (${e.message.slice(0, 120)}); used the OpenAI voice.`));
 }
 
@@ -94,13 +99,7 @@ export function createEngine(name, hooks, direction = 'en-es', { oneOnOne = fals
     const speak =
       config.ttsProvider === 'openai'
         ? createOpenAiTts({ apiKey: config.openaiKey, model: config.openaiTtsModel, voice: config.openaiTtsVoice, language: dst })
-        : createElevenLabsTts({
-            apiKey: config.elevenKey,
-            voiceId: dst === 'es' ? config.elevenVoiceId : config.elevenReplyVoiceId || config.elevenVoiceId,
-            model: config.elevenModel,
-            speed: config.ttsSpeed,
-            language: dst,
-          });
+        : elevenVoiceFor(dst);
     return new PipelineEngine(
       hooks,
       {

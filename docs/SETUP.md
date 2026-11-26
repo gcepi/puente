@@ -10,10 +10,13 @@ If Puente already runs on Render, open the service's **Environment** tab and che
 | `HOST_PASSCODE` | Protects the host controls. Crew members open the meeting link or scan the QR code. |
 | `OPENAI_API_KEY` | Required for transcription. OpenAI also translates by default and provides the backup voice. |
 | `ANTHROPIC_API_KEY` | Optional. Setting this key selects Claude for translation in push-to-talk mode. |
-| `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` | Set both to use your cloned voice for Spanish. Copy the voice ID from your ElevenLabs voice library. |
-| `ELEVENLABS_REPLY_VOICE_ID` | Optional separate voice for English replies. When empty, crew replies use the same ElevenLabs voice as the manager. |
+| `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` | Set both to enable ElevenLabs. The voice ID from your library is the base voice for either language. |
+| `ELEVENLABS_SPANISH_VOICE_ID` | Optional voice for spoken Spanish in meetings and Solo. An empty setting uses the base voice. |
+| `ELEVENLABS_REPLY_VOICE_ID` | Optional voice for spoken English. An empty setting uses the base voice. |
 | `ELEVENLABS_MODEL` | Defaults to `eleven_flash_v2_5` (Flash v2.5). |
 | `TTS_SPEED` | Controls speaking pace for the clone and default OpenAI backup. Render uses its existing value, or `1.15` if unset. The local example sets `1.08`. Keep the current value to preserve your pace. |
+
+The interpreter asks for neutral Latin American Spanish and uses the team's Mexican maintenance glossary. The audible accent depends on the selected ElevenLabs voice and, for a clone, the source recordings. Preview a native Latin American voice in your ElevenLabs library using a phrase your crew says often. To use it for Spanish, copy its ID into `ELEVENLABS_SPANISH_VOICE_ID` in Render and redeploy. Clear this optional setting to use your base voice again.
 
 The blueprint uses Render's free plan. If your service sleeps between meetings, open the host page ahead of time and wait for the mode selector to load.
 

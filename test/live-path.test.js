@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 process.env.OPENAI_API_KEY = 'sk-test';
 process.env.ELEVENLABS_API_KEY = 'el-test';
 process.env.ELEVENLABS_VOICE_ID = 'pNInz6obpgDQGcFmaJgB';
+process.env.ELEVENLABS_SPANISH_VOICE_ID = '';
 process.env.TTS_SPEED = ''; // Exercise the default even if the developer has a local .env.
 const { createEngine, voiceName } = await import('../server/engines/index.js');
 
